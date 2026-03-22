@@ -1,4 +1,4 @@
-from modules.common.module import BotModule
+from ..core.module import BotModule
 
 
 class MatrixModule(BotModule):
@@ -6,6 +6,7 @@ class MatrixModule(BotModule):
     def __init__(self, name):
         super().__init__(name)
         self.msg_users = False
+        self.info = "More information at https://github.com/vranki/hemppa"
 
     def get_settings(self):
         data = super().get_settings()
@@ -70,7 +71,9 @@ class MatrixModule(BotModule):
         if self.msg_users:
             await bot.send_msg(event.sender, f'Chat with {bot.matrix_user}', msg)
         else:
-            await bot.send_text(room, msg)
+            from ..core.send_text import send_text
+
+            await send_text(bot, room, msg)
 
     def help(self):
         return 'Prints help on commands'

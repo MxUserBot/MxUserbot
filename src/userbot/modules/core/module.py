@@ -2,6 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 
 from nio import RoomMessageText, MatrixRoom
+from ...registry import module_aliases
 
 class ModuleCannotBeDisabled(Exception):
     pass
@@ -118,7 +119,7 @@ class BotModule(ABC):
             if bot.modules.get(name):
                 self.logger.info(f"not aliasing {name}, it is already a module")
                 continue
-            prev = bot.module_aliases.get(name)
+            prev = module_aliases.get(name)
             if prev == self.name:
                 continue
             if prev and not force:
@@ -126,7 +127,7 @@ class BotModule(ABC):
                 continue
             if prev:
                 self.logger.debug(f"overriding alias {name} for {prev}")
-            bot.module_aliases[name] = self.name
+                module_aliases[name] = self.name
 
     def enable(self):
         self.enabled = True

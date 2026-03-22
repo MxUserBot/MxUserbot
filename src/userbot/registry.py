@@ -1,0 +1,11 @@
+active_modules: dict = {}
+leave_empty_rooms = True
+invite_whitelist = []
+join_hack_time = 5  # Seconds
+module_aliases = dict()
+leave_empty_rooms = True
+join_on_invite = False
+owners = []
+appid = 'org.vranki.hemppa'
+version = '1.5'
+uri_cache = dict()

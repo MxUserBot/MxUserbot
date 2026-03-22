@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from random import randrange
 
-from modules.common.module import BotModule
+from .module import BotModule
 
 
 class PollingService(BotModule):
