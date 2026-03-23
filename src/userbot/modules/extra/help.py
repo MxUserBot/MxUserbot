@@ -1,10 +1,9 @@
-from ..core.module import BotModule
+from ..core import loader
 
+class MatrixModule(loader.Module):
 
-class MatrixModule(BotModule):
+    def __init__(self):
 
-    def __init__(self, name):
-        super().__init__(name)
         self.msg_users = False
         self.info = "More information at https://github.com/vranki/hemppa"
 
@@ -12,6 +11,8 @@ class MatrixModule(BotModule):
         data = super().get_settings()
         data['msg_users'] = self.msg_users
         data['info'] = self.info
+
+        print(data)
         return data
 
     def set_settings(self, data):
@@ -22,7 +23,8 @@ class MatrixModule(BotModule):
 
     def matrix_start(self, bot):
         super().matrix_start(bot)
-        self.add_module_aliases(bot, ['sethelp'])
+
+    
 
     async def matrix_message(self, bot, room, event):
 
