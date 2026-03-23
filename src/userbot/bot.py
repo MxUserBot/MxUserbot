@@ -19,21 +19,20 @@ class Bot:
         self.modules = active_modules
         self.version = "1"
         self.uri_cache = dict()
-        self.debug = os.getenv("DEBUG", "false").lower() == "true"
 
 
-    def get_uri_cache(self, url, blob=False):
-        """
+    # def get_uri_cache(self, url, blob=False):
+    #     """
 
-        :param url: Url of binary content of the image to upload
-        :param blob: Flag to indicate if the second param is an url or a binary content
-        :return: [matrix_uri, mimetype, w, h, size], or None
-        """
-        cache_key = url
-        if blob:  ## url is bytes, cannot be used a key for cache
-            cache_key = hashlib.md5(url).hexdigest()
+    #     :param url: Url of binary content of the image to upload
+    #     :param blob: Flag to indicate if the second param is an url or a binary content
+    #     :return: [matrix_uri, mimetype, w, h, size], or None
+    #     """
+    #     cache_key = url
+    #     if blob:  ## url is bytes, cannot be used a key for cache
+    #         cache_key = hashlib.md5(url).hexdigest()
 
-        return self.uri_cache.get(cache_key)
+    #     return self.uri_cache.get(cache_key)
 
 
     async def send_html(self, room, html, plaintext, event=None, msgtype="m.notice", bot_ignore=False):
@@ -58,25 +57,25 @@ class Bot:
         await room_send(room.room_id, event, 'm.room.message', msg)
 
 
-    async def send_location(self, room, body, latitude, longitude, event=None, bot_ignore=False, asset='m.pin'):
-        """
+    # async def send_location(self, room, body, latitude, longitude, event=None, bot_ignore=False, asset='m.pin'):
+    #     """
 
-        :param room: A MatrixRoom the html should be send to
-        :param html: Html content of the message
-        :param body: Plaintext content of the message
-        :param latitude: Latitude in WGS84 coordinates (float)
-        :param longitude: Longitude in WGS84 coordinates (float)
-        :param bot_ignore: Flag to mark the message to be ignored by the bot
-        :param asset: Asset string as defined in MSC3488 (such as m.self or m.pin)
-        :return:
-        """
-        locationmsg = {
-            "body": str(body),
-            "geo_uri": 'geo:' + str(latitude) + ',' + str(longitude),
-            "msgtype": "m.location",
-            "org.matrix.msc3488.asset": { "type": asset }
-            }
-        await room_send(room.room_id, event, 'm.room.message', locationmsg)
+    #     :param room: A MatrixRoom the html should be send to
+    #     :param html: Html content of the message
+    #     :param body: Plaintext content of the message
+    #     :param latitude: Latitude in WGS84 coordinates (float)
+    #     :param longitude: Longitude in WGS84 coordinates (float)
+    #     :param bot_ignore: Flag to mark the message to be ignored by the bot
+    #     :param asset: Asset string as defined in MSC3488 (such as m.self or m.pin)
+    #     :return:
+    #     """
+    #     locationmsg = {
+    #         "body": str(body),
+    #         "geo_uri": 'geo:' + str(latitude) + ',' + str(longitude),
+    #         "msgtype": "m.location",
+    #         "org.matrix.msc3488.asset": { "type": asset }
+    #         }
+    #     await room_send(room.room_id, event, 'm.room.message', locationmsg)
 
 
     async def send_image(self, room, url, body, event=None, mimetype=None, width=None, height=None, size=None):
