@@ -1,29 +1,25 @@
-from ..core.types import Module, command, tds
+from ..core import loader
 
-@tds
-class MatrixModule(Module):
+@loader.tds
+class MatrixModule(loader.Module):
     strings = {
-        "name": "Помощь",
+        "name": "helper",
         "_cls_doc": "Отображает список всех доступных команд и информацию о модулях.",
-        "info_text": "Привет! Сын хорошего человека!\nКак дела?"
     }
 
-    @command(name="help")
-    async def help_cmd(self, bot, room, event, args):
+    @loader.command()
+    async def help(self, bot, room, event, args):
         """[команда] - Показать список команд или справку"""
 
         if not args:
             msg = f"<b>💠 {self.friendly_name}</b>\n"
-            msg += f"<i>{self.help()}</i>\n\n"
+            msg += f"<i>{self._help()}</i>\n\n"
             
             msg += "<b>Доступные модули:</b>\n"
             for mod in bot.all_modules.active_modules.values():
-                msg += f"▫️ <code>{mod.friendly_name}</code> — {mod.help()}\n"
+                msg += f"▫️ <code>{mod.friendly_name}</code> — {mod._help()}\n"
             
-            info = self.strings.get("info_text", "")
-            if info:
-                msg += f"\n<i>{info}</i>"
-                
+
             return await bot.send_text(room, msg)
 
         cmd_name = args.lower()
