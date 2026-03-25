@@ -2,40 +2,42 @@
 
 
 
-from loguru import logger
 
-
+import os
+import re
 import json
 import urllib
+import hashlib
 import requests
-from loguru import logger
-
-from ...settings import config
-from .exceptions import handle_error_response
-
+import mimetypes
 
 from io import BytesIO
-import mimetypes
-import os
-from PIL import Image
-from nio import UploadResponse, UploadError
-import hashlib
-
+from loguru import logger
 from nio import (
     RoomPutStateError,
     RoomCreateError,
     RoomVisibility,
     RoomPreset,
-    RoomResolveAliasResponse
+    RoomResolveAliasResponse,
+    UploadResponse,
+    UploadError,
+    MatrixRoom,
+    RoomMessage,
+    Callable
 )
+
+from ...settings import config
+from .exceptions import handle_error_response
+
 
 class Methods:
     def __init__(self, bot):
         self.bot = bot
 
+
     async def get_uri_cache(
             self,
-            url,
+            url: str,
             blob=False
     ) -> dict:
             """
@@ -52,14 +54,14 @@ class Methods:
 
 
     async def send_html(
-            self,
-            room,
-            html,
-            plaintext,
-            event=None,
-            msgtype="m.notice",
-            bot_ignore=False
-    ):
+        self,
+        room: MatrixRoom,
+        html: str,
+        plaintext: str,
+        event: RoomMessage | None = None,
+        msgtype: str = "m.notice",
+        bot_ignore: bool = False
+    ) -> None:
         """
 
         :param room: A MatrixRoom the html should be send to
@@ -82,15 +84,15 @@ class Methods:
 
 
     async def send_location(
-            self,
-            room,
-            body,
-            latitude,
-            longitude,
-            event=None,
-            bot_ignore=False,
-            asset='m.pin'
-    ):
+        self,
+        room: MatrixRoom,
+        body: str,
+        latitude: float,
+        longitude: float,
+        event: RoomMessage | None = None,
+        bot_ignore: bool = False,
+        asset: str = "m.pin"
+    ) -> None:
         """
 
         :param room: A MatrixRoom the html should be send to
@@ -111,13 +113,11 @@ class Methods:
         await self.room_send(room.room_id, event, 'm.room.message', locationmsg)
 
 
-
-
-    async def upload_file(self, file, filename=None):
-        import mimetypes
-        from io import BytesIO
-        import os
-
+    async def upload_file(
+        self,
+        file: str,
+        filename: str =None
+    ) -> None:
         if isinstance(file, str):
             if not os.path.exists(file):
                 raise FileNotFoundError(file)
@@ -134,14 +134,13 @@ class Methods:
 
         size = len(data)
 
-        # вот тут ты раньше облажался
         bio = BytesIO(data)
 
         resp, _ = await self.client.upload(
-            bio,  # теперь это валидно
+            bio,
             content_type=mime_type or "application/octet-stream",
             filename=filename,
-            filesize=size  # <-- КРИТИЧНО
+            filesize=size
         )
 
         if isinstance(resp, UploadResponse):
@@ -154,15 +153,14 @@ class Methods:
             raise Exception(f"Upload failed: {resp.message}")
 
         return None, None
-            
 
 
     async def send_image(
             self,
-            room,
-            image, # Может быть путем, байтами или mxc://
-            body="Image",
-            event=None,
+            room: MatrixRoom,
+            image: str,
+            body: str = "Image",
+            event: RoomMessage = None,
             **kwargs
     ):
         """
@@ -188,19 +186,14 @@ class Methods:
         return await self.room_send(room.room_id, event, 'm.room.message', msg)
 
 
-
-
     async def send_video(
             self,
-            room,
-            video,
-            body="Video",
-            event=None,
+            room: MatrixRoom,
+            video: str,
+            body: str = "Video",
+            event: RoomMessage = None,
             **kwargs
     ):
-        """
-        Отправка видео (локального или по ссылке)
-        """
         mxc_url = video
         info = {}
 
@@ -209,31 +202,44 @@ class Methods:
             if not mxc_url:
                 return logger.error("Failed to upload video")
 
+            if isinstance(video, str):
+                mime, _ = mimetypes.guess_type(video)
+                if mime:
+                    info["mimetype"] = mime
+
+        if "mimetype" not in info:
+            info["mimetype"] = "video/mp4"
+
         info.update(kwargs)
 
         msg = {
-            "url": mxc_url,
-            "body": body,
             "msgtype": "m.video",
+            "body": body,
+            "url": mxc_url,
             "info": info
         }
 
-        return await self.room_send(room.room_id, event, 'm.room.message', msg)
+        await self.room_send(
+            room.room_id,
+            event,
+            "m.room.message",
+            msg
+        )
+        return
+
 
     async def send_text(
             self,
-            room,
-            body,
-            event=None,
-            msgtype="m.notice",
-            bot_ignore=False
+            room: MatrixRoom,
+            body: str,
+            event: RoomMessage = None,
+            msgtype: str = "m.notice",
+            bot_ignore: bool = False
     ):
         """
         Универсальный метод отправки. 
         Если находит HTML-теги, автоматически делегирует отправку в send_html.
         """
-
-        import re
         if bool(re.search(r'<[^>]+>', str(body))):
             plaintext = re.sub(r'<[^>]+>', '', str(body))
             
@@ -255,10 +261,23 @@ class Methods:
         if bot_ignore:
             msg["org.vranki.hemppa.ignore"] = "true"
 
-        return await self.room_send(room.room_id, event, 'm.room.message', msg)
+        await self.room_send(
+            room.room_id,
+            event,
+            'm.room.message',
+            msg
+        )
+        return
 
 
-    async def room_send(self, room_id, pre_event, msgtype, msg, **kwargs):
+    async def room_send(
+            self,
+            room_id: int,
+            pre_event: RoomMessage,
+            msgtype: str,
+            msg: str,
+            **kwargs
+    ) -> None:
         if pre_event is None:
             logger.info(f'No pre-event passed. This module may not be set up to support m.thread.')
         else:
@@ -271,18 +290,20 @@ class Methods:
             except (AttributeError, KeyError):
                 pass
 
-        return await self.client.room_send(
+        await self.client.room_send(
             room_id=room_id,
             message_type=msgtype,
             content=msg,
             **kwargs
-    )
+        )
+        return
+
 
     async def set_room_avatar(
             self,
-            room,
-            uri
-    ):
+            room: MatrixRoom,
+            uri: str
+    ) -> str:
         """
 
         :param room: A MatrixRoom the image should be send as room avatar event
@@ -293,7 +314,11 @@ class Methods:
             "url": uri
         }
 
-        result = await self.client.room_put_state(room.room_id, 'm.room.avatar', msg)
+        result = await self.client.room_put_state(
+            room.room_id,
+            'm.room.avatar',
+            msg
+        )
 
         if isinstance(result, RoomPutStateError):
             logger.warning(f"can't set room avatar. {result.message}")
@@ -304,9 +329,9 @@ class Methods:
 
     async def send_msg(
             self,
-            mxid,
-            roomname,
-            message
+            mxid: int,
+            roomname: str,
+            message: str
     ):
         """
 
@@ -326,7 +351,11 @@ class Methods:
         return True
 
 
-    async def find_or_create_private_msg(self, mxid, roomname):
+    async def find_or_create_private_msg(
+        self,
+        mxid: int,
+        roomname: str
+    ) -> str:
         # Find if we already have a common room with user:
         msg_room = None
         for croomid in self.client.rooms:
@@ -347,27 +376,32 @@ class Methods:
         return msg_room
 
 
-
-
-    def set_account_data(self, data):
+    def set_account_data(
+        self,
+        data: str
+    ) -> None: 
         userid = urllib.parse.quote(config.matrix_config.owner)
 
         headers = {
             'Authorization': f'Bearer {config.matrix_config.access_token.get_secret_value()}',
         }
         ad_url = f"{self.bot.client.homeserver}/_matrix/client/v3/user/{userid}/account_data/{config.matrix_config.appid}"
-        response = requests.put(ad_url, json.dumps(data), headers=headers)
+        response = requests.put(
+            ad_url,
+            json.dumps(data),
+            headers=headers
+        )
         handle_error_response(response)
         
-        logger.debug(f"респонс от сета аккаунта: {response}")
-
         if response.status_code == 200:
             return response.json()
         logger.error(f'Getting account data failed: {response} {response.json()} - this is normal if you have not saved any settings yet.')
         return None
 
 
-    def get_account_data(self):
+    def get_account_data(
+        self
+    ) -> None:
         userid = urllib.parse.quote(config.matrix_config.owner)
 
         headers = {
@@ -375,7 +409,10 @@ class Methods:
         }
 
         ad_url = f"{self.client.homeserver}/_matrix/client/v3/user/{userid}/account_data/{config.matrix_config.appid}"
-        response = requests.get(ad_url, headers=headers)
+        response = requests.get(
+            ad_url, 
+            headers=headers
+        )
         handle_error_response(response)
 
         if response.status_code == 200:
@@ -384,7 +421,10 @@ class Methods:
         return None
 
 
-    async def on_invite_whitelist(bot, sender):
+    async def on_invite_whitelist(
+        bot, 
+        sender: str
+    ) -> bool:
         invite_whitelist = await bot.db.get("core", "invite_whitelist", [])
 
         for entry in invite_whitelist:
@@ -394,22 +434,31 @@ class Methods:
             if controll_value[0] == '@*' and controll_value[1] == sender.split(':')[1]:
                 return True
         return False
-    
 
-    def remove_callback(self, callback):
+
+    def remove_callback(
+        self,
+        callback: Callable
+    ):
         for cb_object in self.client.event_callbacks:
             if cb_object.func == callback:
                 logger.info("remove callback")
                 self.client.event_callbacks.remove(cb_object)
 
 
-    def get_room_by_id(self, room_id):
+    def get_room_by_id(
+        self,
+        room_id
+    ) -> list | None:
         try:
             return self.client.rooms[room_id]
         except KeyError:
             return None
 
-    async def get_room_by_alias(self, alias):
+    async def get_room_by_alias(
+        self,
+        alias
+    ) -> int | None:
         rar = await self.client.room_resolve_alias(alias)
         if type(rar) is RoomResolveAliasResponse:
             return rar.room_id

@@ -1,24 +1,24 @@
 import os
+import typing
 import shutil
-import importlib
-import importlib.util
-from pathlib import Path
-from loguru import logger
 import inspect
 import hashlib
-import typing
+import importlib
+import importlib.util
+from functools import wraps
+
+from pathlib import Path
+from loguru import logger
 
 from .types import Module
 from . import utils 
 
-def _calc_module_hash(source: str) -> str:
-    return hashlib.sha256(source.encode("utf-8", errors="ignore")).hexdigest()
-
 
 _MODULE_NAME_BY_HASH: typing.Dict[str, str] = {}
 
-from functools import wraps
 
+def _calc_module_hash(source: str) -> str:
+    return hashlib.sha256(source.encode("utf-8", errors="ignore")).hexdigest()
 
 
 def command(name=None):
@@ -86,7 +86,6 @@ def tds(cls):
         _require(f"_cmd_doc_{cmd_name}", f"Команда '!{cmd_name}' ОБЯЗАНА иметь docstring!")
 
     return cls
-
 
 
 class Loader:

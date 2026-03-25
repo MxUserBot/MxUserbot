@@ -17,5 +17,6 @@ class MatrixModule(loader.Module):
         # await bot.send_image(room, "mxc://pashahatsune.duckdns.org/YyQjXCmBkpHvkkBTZxMdsIgw", event.body)
 
 
-        await bot.send_image(room, "/home/miku/remote/dev/synapse/test.jpg", event.body)
+        # await bot.send_image(room, "/home/miku/remote/dev/synapse/test.jpg", event.body)
+        # await bot.send_video(room, "/home/miku/Documents/12.mp4", event.body)
 

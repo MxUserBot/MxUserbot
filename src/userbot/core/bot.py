@@ -12,11 +12,14 @@ if typing.TYPE_CHECKING:
     from ...database.methods import Database
 
 import time
+
+from nio import AsyncClient
+
 class Bot(Methods):
     def __init__(self, db: 'Database', client=None):
         
-        self.db = db
-        self.client = client
+        self.db: Database = db
+        self.client: AsyncClient = client
         
         self.all_modules = Loader(self.db)
         self.active_modules = {}
