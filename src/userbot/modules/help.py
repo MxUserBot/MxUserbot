@@ -1,35 +1,58 @@
 from ..core import loader
 
+
 @loader.tds
 class MatrixModule(loader.Module):
     strings = {
         "name": "helper",
         "_cls_doc": "Отображает список всех доступных команд и информацию о модулях.",
+        "header": "<b>💠 {name}</b>\n<i>{desc}</i>\n\n",
+        "modules_title": "<b>Доступные модули:</b>\n",
+        "module_item": "▫️ <code>{name}</code> — {desc}\n",
+        "cmd_info": "<b>Команда:</b> <code>{prefix}{name}</code>\n<b>Описание:</b> {desc}",
+        "cmd_not_found": "❌ Команда <code>{prefix}{name}</code> не найдена.",
+        "no_desc": "Описание отсутствует"
     }
 
     @loader.command()
-    async def help(self, bot, room, event, args):
-        """[команда] - Показать список команд или справку"""
+    async def help(self, bot, event):
+        """Отображает список команд"""
+        parts = event.body.split()
+        args = parts[1] if len(parts) > 1 else None
+        prefix = bot.prefixes[0]
 
         if not args:
-            msg = f"<b>💠 {self.friendly_name}</b>\n"
-            msg += f"<i>{self._help()}</i>\n\n"
+            msg = self.strings["header"].format(
+                name=self.friendly_name, 
+                desc=self._help()
+            )
+            msg += self.strings["modules_title"]
             
-            msg += "<b>Доступные модули:</b>\n"
-            for mod in bot.all_modules.active_modules.values():
-                msg += f"▫️ <code>{mod.friendly_name}</code> — {mod._help()}\n"
-            
+            for mod in bot.active_modules.values():
+                msg += self.strings["module_item"].format(
+                    name=mod.friendly_name, 
+                    desc=mod._help()
+                )
 
-            return await bot.send_text(room, msg)
+            return await bot.send_text(event.room, msg)
 
         cmd_name = args.lower()
-        for mod in bot.all_modules.active_modules.values():
+        for mod in bot.active_modules.values():
             if cmd_name in mod.commands:
-                doc = mod.strings.get(f"_cmd_doc_{cmd_name}", "Описание отсутствует")
+                doc = mod.strings.get(f"_cmd_doc_{cmd_name}", self.strings["no_desc"])
                 return await bot.send_text(
-                    room, 
-                    f"<b>Команда:</b> <code>!{cmd_name}</code>\n"
-                    f"<b>Описание:</b> {doc}"
+                    event.room, 
+                    self.strings["cmd_info"].format(
+                        prefix=prefix,
+                        name=cmd_name,
+                        desc=doc
+                    )
                 )
         
-        await bot.send_text(room, f"❌ Команда <code>!{cmd_name}</code> не найдена.")
+        await bot.send_text(
+            event.room, 
+            self.strings["cmd_not_found"].format(
+                prefix=prefix,
+                name=cmd_name
+            )
+        )

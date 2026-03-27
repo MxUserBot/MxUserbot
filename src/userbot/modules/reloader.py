@@ -1,18 +1,19 @@
 import sys
-import importlib
+
 from ..core import loader
 
 @loader.tds
 class MatrixModule(loader.Module):
     strings = {
         "name": "ReloadModule",
-        "_cls_doc": "Модуль для горячей перезагрузки всех модулей с проверкой хэшей."
+        "_cls_doc": "Модуль для горячей перезагрузки всех модулей с проверкой хэшей.",
+        "reloaded_header": "<b>♻️ Модули перезагружены:</b>\n",
+        "module_item": "▫️ <code>{name}</code>\n"
     }
 
     @loader.command()
-    async def reload(self, bot, room, event, args):
-        """Перезагрузить все модули и показать изменения"""
-        
+    async def reload(self, bot, event):
+        """Позволяет перезагружать модули"""
         old_info = {
             name: getattr(mod, "__module_hash__", "unknown")[:8] 
             for name, mod in bot.active_modules.items()
@@ -31,10 +32,9 @@ class MatrixModule(loader.Module):
         await bot.all_modules.register_all(bot)
         
         bot.active_modules = bot.all_modules.active_modules
-        await bot.start()
 
-        msg = "<b>♻️ Модули перезагружены:</b>\n"
-        for name, mod in bot.active_modules.items():
-            msg += f"▫️ <code>{name}</code>\n"
+        msg = self.strings["reloaded_header"]
+        for name in bot.active_modules.keys():
+            msg += self.strings["module_item"].format(name=name)
 
-        await bot.send_text(room, msg)
+        await bot.send_text(event.room, msg)

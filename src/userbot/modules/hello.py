@@ -10,9 +10,9 @@ class MatrixModule(loader.Module):
     }
 
     @loader.command()
-    async def hello(self, bot, room, event, args):
+    async def hello(self, bot, event):
         """Отправляет приветственное сообщение"""
-        await bot.send_text(room, self.strings["soo"])
+        await bot.send_text(event.room, self.strings["soo"])
 
         # await bot.send_image(room, "mxc://pashahatsune.duckdns.org/YyQjXCmBkpHvkkBTZxMdsIgw", event.body)
 
