@@ -53,11 +53,11 @@ class MatrixModule(loader.Module):
     }
 
     @loader.command()
-    # В функцию передаем: self, bot, room, event, args
-    async def hello(self, bot, room, event, args):
+    # В функцию передаем: self, bot, event
+    async def hello(self, bot, event):
         """Отправляет приветственное сообщение""" # обязательно описываем зачем функция. Только для команд
         # По умолчанию команда будет !hello
-        await bot.send_text(room, self.strings["helloy"])
+        await bot.send_text(event.room, self.strings["helloy"])
 ```
 
 > **Подсказка:** Чтобы задать свою команду, используй `@loader.command(name="mycommand")`. Тогда вызов будет через `!mycommand`.
