@@ -61,11 +61,11 @@ class Module(ABC):
     def commands(self):
         return self._commands
 
-    def _get(self, key, default=None): return self.db.get(self.name, key, default)
-    def _set(self, key, value): return self.db.set(self.name, key, value)
+    async def _get(self, key, default=None): return await self.db.get(self.name, key, default)
+    async def _set(self, key, value): return await self.db.set(self.name, key, value)
 
     async def _matrix_start(self, bot): pass
-    async def _matrix_message(self, bot, room, event): pass
+    async def _matrix_message(self, bot, event): pass
     def _matrix_stop(self, bot): pass
     async def _matrix_poll(self, bot, pollcount): pass
 
