@@ -76,6 +76,12 @@ class MatrixModule(loader.Module):
             text=self.strings["Hello"]
         )
 ```
+## Как дать доступ к вашему модулю другим пользователям?
+
+1. Выложите свой модуль на гитхаб
+2. Предоставьте raw ссылку к вашему модулю: https://raw.githubusercontent.com/....../calc.py
+
+3. Другие люди смогут загрузить модуль через: .mdl https://raw.githubusercontent.com/....../calc.py
 
 > **Совет:** Чтобы задать свою команду, используй `@loader.command(name="mycommand")`. Тогда вызов будет через `!mycommand`.
 
