@@ -4,7 +4,7 @@ import re
 import shutil
 import asyncio
 from dataclasses import dataclass
-from typing import Union, Optional, List
+from typing import List, Optional
 import subprocess
 
 from mautrix.types import (
@@ -16,8 +16,8 @@ from ...core import loader
 
 @dataclass
 class TTData:
-    media: List[str]  # Всегда список
-    type: str         # "video" или "images"
+    media: List[str]
+    type: str  # "video" или "images"
 
 class TikTokAPI:
     def __init__(self, host: Optional[str] = None):
@@ -57,20 +57,10 @@ class TikTokAPI:
             elif "play" in result:
                 url = result.get("play") or result.get("hdplay")
                 path = f"tt_temp_{result['id']}.mp4"
-
                 await self._download_file(url, path)
-
                 return TTData([path], "video")
+            
             raise Exception("Unknown content type")
-
-def convert_to_mp4(input_path: str, output_path: str):
-    subprocess.run([
-        "ffmpeg", "-y", "-i", input_path,
-        "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-        "-c:a", "aac", "-b:a", "128k",
-        output_path
-    ], check=True)
-
 
 def convert_to_mp4(input_path: str) -> str:
     """Конвертирует bvc2 или неподдерживаемый TikTok формат в mp4, возвращает путь нового файла"""
@@ -152,6 +142,10 @@ class MatrixModule(loader.Module):
                     event_type=EventType.ROOM_MESSAGE,
                     content=content
                 )
+
+                # Удаляем временный файл после загрузки
+                if os.path.exists(file_path):
+                    os.remove(file_path)
 
         except Exception as e:
             await mx.client.send_text(event.room_id, self.strings["error"].format(err=str(e)))
