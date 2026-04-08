@@ -20,7 +20,6 @@ class MatrixModule(loader.Module):
         """
         async with aiohttp.ClientSession() as s:
             params = {"rating": "safe"}
-            # 1. Запрос к API за метаданными
             async with s.get("https://astolfo.rocks/api/images/random", params=params) as r:
                 if r.status != 200:
                     return await mx.client.send_text(
@@ -54,5 +53,5 @@ class MatrixModule(loader.Module):
             await mx.client.send_image(
                 room_id=event.room_id,
                 url=mxc,
-                file_name=filename
+                file_name=filename,
             )
