@@ -3,19 +3,22 @@ import contextlib
 import logging
 import sys
 from abc import ABC
-from typing import Any, AsyncGenerator, Optional, Dict, List
+from typing import Any, AsyncGenerator
 
+import aiohttp
 from loguru import logger
 from ruamel.yaml.comments import CommentedMap
 
 from mautrix.client import Client
 from mautrix.client.state_store import MemoryStateStore as BaseMemoryStateStore
+from mautrix.crypto.attachments import encrypt_attachment
 from mautrix.crypto.store import MemoryCryptoStore as BaseMemoryCryptoStore
 from mautrix.types import (
     CrossSigningUsage,
     EventType,
     ImageInfo,
     MediaMessageEventContent,
+    MessageType,
     TOFUSigningKey,
 )
 from mautrix.util import markdown
@@ -96,8 +99,6 @@ class Module(ABC):
     
 
 
-import aiohttp
-from mautrix.crypto.attachments import encrypt_attachment
 
 
 class UserBotClient(Client):
@@ -112,12 +113,14 @@ class UserBotClient(Client):
         relates_to=None,
         **kwargs,
     ):
-        """Авто-шифрование для E2EE чатов с поддержкой caption"""
         if not url and not file_bytes:
             raise ValueError("Нужно указать либо url, либо file_bytes")
 
-        file_name = file_name or "file.png"
+        caption = (caption or "").strip() or None
+        file_name = file_name or "image.png"
         is_enc = await self.state_store.is_encrypted(room_id)
+
+        extra = {"relates_to": relates_to} if relates_to else {}
 
         if is_enc:
             if not file_bytes and url:
@@ -126,30 +129,47 @@ class UserBotClient(Client):
                         file_bytes = await r.read()
 
             enc_data, enc_info = encrypt_attachment(file_bytes)
-            mxc = await self.upload_media(enc_data, mime_type="application/octet-stream", filename=file_name)
+            mxc = await self.upload_media(
+                enc_data,
+                mime_type="application/octet-stream",
+                filename=file_name,
+            )
             enc_info.url = mxc
 
-            content = MediaMessageEventContent(
-                msgtype="m.image",
-                body=caption or file_name,
-                info=info,
-                file=enc_info,
-                relates_to=relates_to,
-                format="org.matrix.custom.html",
-                formatted_body=markdown.render(caption or file_name),
-            )
+            content_data = {
+                "msgtype": MessageType.IMAGE,
+                "body": caption or file_name,
+                "info": info,
+                "file": enc_info,
+                **extra,
+            }
+            if caption:
+                content_data["format"] = "org.matrix.custom.html"
+                content_data["formatted_body"] = markdown.render(caption)
+
         else:
-            mxc_url = url or await self.upload_media(file_bytes, mime_type="image/png", filename=file_name)
-            content = MediaMessageEventContent(
-                msgtype="m.image",
-                body=caption or file_name,
-                info=info,
-                url=mxc_url,
-                filename=file_name,
-                relates_to=relates_to,
-                format="org.matrix.custom.html",
-                formatted_body=markdown.render(caption or file_name),
-            )
+            if file_bytes and not url:
+                mxc = await self.upload_media(
+                    file_bytes,
+                    mime_type="image/png",
+                    filename=file_name,
+                )
+            else:
+                mxc = url
+
+            content_data = {
+                "msgtype": MessageType.IMAGE,
+                "body": caption or file_name,
+                "info": info,
+                "url": mxc,
+                "filename": file_name,
+                **extra,
+            }
+            if caption:
+                content_data["format"] = "org.matrix.custom.html"
+                content_data["formatted_body"] = markdown.render(caption)
+
+        content = MediaMessageEventContent(**content_data)
 
         return await self.send_message_event(
             room_id,
@@ -157,8 +177,6 @@ class UserBotClient(Client):
             content,
             **kwargs,
         )
-
-
 
 class Config(BaseFileConfig):
     """Логика конфигурации через SQLite."""
@@ -171,7 +189,7 @@ class Config(BaseFileConfig):
                 "base_url": config.matrix_config.base_url,
                 "username": config.matrix_config.owner,
                 "password": config.matrix_config.password.get_secret_value(),
-                "device_id": "MXBT-SQL", # НОВЫЙ ID для чистой базы
+                "device_id": "MxUserBot",
                 "log_room_id": "",
                 "owner": config.matrix_config.owner
             },
