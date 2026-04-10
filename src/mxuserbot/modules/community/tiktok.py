@@ -92,14 +92,13 @@ class MatrixModule(loader.Module):
         url = matches[0] if matches else None
 
         if not url:
-            return await mx.client.send_text(event.room_id, html=self.strings["no_url"])
+            return await mx.answer(self.strings.get("no_url"))
 
-        progress = await mx.client.send_text(event.room_id, self.strings["downloading"])
+        progress = await mx.answer(self.strings.get("downloading"))
         
         api = TikTokAPI()
         try:
             result = await api.download(url)
-            is_encrypted = await mx.state_store.is_encrypted(event.room_id)
 
             for file_path in result.media:
                 if result.type == "video":
@@ -118,24 +117,13 @@ class MatrixModule(loader.Module):
                     msg_type = MessageType.IMAGE
                     info = ImageInfo(mimetype=mime, size=len(file_bytes))
 
-                if is_encrypted:
-                    enc_data, enc_info = encrypt_attachment(file_bytes)
-                    mxc = await mx.client.upload_media(enc_data, mime_type="application/octet-stream", filename=filename)
-                    enc_info.url = mxc
-                    content = MediaMessageEventContent(
-                        msgtype=msg_type,
-                        body=filename,
-                        info=info,
-                        file=enc_info
-                    )
-                else:
-                    mxc = await mx.client.upload_media(file_bytes, mime_type=mime, filename=filename)
-                    content = MediaMessageEventContent(
-                        msgtype=msg_type,
-                        body=filename,
-                        info=info,
-                        url=mxc
-                    )
+                mxc = await mx.client.upload_media(file_bytes, mime_type=mime, filename=filename)
+                content = MediaMessageEventContent(
+                    msgtype=msg_type,
+                    body=filename,
+                    info=info,
+                    url=mxc
+                )
 
                 await mx.client.send_message_event(
                     room_id=event.room_id,
@@ -147,12 +135,12 @@ class MatrixModule(loader.Module):
                     os.remove(file_path)
 
         except Exception as e:
-            await mx.client.send_text(event.room_id, self.strings["error"].format(err=str(e)))
+            await mx.answer(self.strings.get("error").format(err=str(e)))
         
         finally:
             await api.close()
             try:
-                await mx.client.redact(event.room_id, progress)
+                await mx.client.redact(event.room_id, progress, reason="TkTok Module")
                 if os.path.exists("tt_temp"):
                     shutil.rmtree("tt_temp")
             except:
