@@ -79,7 +79,7 @@ class MatrixModule(loader.Module):
     strings = {
         "name": "TikTokDL",
         "_cls_doc": "Скачивает TikTok видео и фото-слайды (E2EE ready).",
-        "no_url": "❌ TikTok URL не найден.",
+        "no_url": "❌ <b><u>TikTok URL не найден.</u></b>",
         "downloading": "⏳ Скачивание и обработка медиа...",
         "error": "❌ Ошибка: {err}"
     }
@@ -92,7 +92,7 @@ class MatrixModule(loader.Module):
         url = matches[0] if matches else None
 
         if not url:
-            return await mx.client.send_text(event.room_id, self.strings["no_url"])
+            return await mx.client.send_text(event.room_id, html=self.strings["no_url"])
 
         progress = await mx.client.send_text(event.room_id, self.strings["downloading"])
         
