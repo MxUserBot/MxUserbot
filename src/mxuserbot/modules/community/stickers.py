@@ -2,10 +2,7 @@ import aiohttp
 import asyncio
 import re
 import uuid
-import json
 import io
-import typing
-from urllib.parse import quote
 from PIL import Image
 from typing import Any
 from mautrix.types import MessageEvent
