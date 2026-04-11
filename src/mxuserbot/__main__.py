@@ -148,7 +148,7 @@ class MXUserBot(Program):
             topic="Техническая комната для системных уведомлений и логов",
             is_direct=True,
             visibility=RoomDirectoryVisibility.PRIVATE,
-            invitees=[owner_id],
+            # invitees=[owner_id],
             initial_state=initial_state
         )
         await self.client.join_room(new_room_id)
@@ -380,13 +380,15 @@ class MXUserBot(Program):
                 api=HTTPAPI(base_url=conf["base_url"]),
                 state_store=self.state_store,
                 sync_store=self.crypto_store
+            
             )
 
             self.log.info("Выполняю вход в Matrix...")
             await self.client.login(
                 identifier=conf["username"],
                 password=conf["password"],
-                device_id=conf["device_id"]
+                device_id=conf["device_id"],
+                device_name="MXUserBot"
             )
             self.log.info(f"Вход выполнен как {conf['device_id']}!")
 
@@ -457,10 +459,18 @@ class MXUserBot(Program):
 
             self.log.info("Запуск синхронизации Matrix...")
             
-            # ФИЛЬТР: Берем только новые сообщения, чтобы не было "красного спама" от истории
-            sync_filter = {"room": {"timeline": {"limit": 1}}}
+            sync_filter = await self.client.create_filter({
+                "room": {
+                    "timeline": {
+                        "limit": 1
+                    },
+                    "state": {
+                        "lazy_load_members": True
+                    }
+                }
+            })
+
             await self.client.start(filter_data=sync_filter)
-            
         except Exception as e:
             self.log.exception(f"Критическая ошибка при запуске бота: {e}")
 
