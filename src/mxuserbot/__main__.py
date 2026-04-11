@@ -358,9 +358,6 @@ class MXUserBot(Program):
             await self.config.load_from_db()
             conf = self.config["matrix"]
 
-
-
-
             db_path = os.path.join(os.getcwd(), "crypto.db")
             self.log.info(f"Подключение к базе ключей E2EE: {db_path}")
             
@@ -383,18 +380,28 @@ class MXUserBot(Program):
             
             )
 
-            self.log.info("Выполняю вход в Matrix...")
-            await self.client.login(
-                identifier=conf["username"],
-                password=conf["password"],
-                device_id=conf["device_id"],
-                device_name="MXUserBot"
-            )
-            self.log.info(f"Вход выполнен как {conf['device_id']}!")
+            if conf.get("access_token"):
+                self.log.info(f"Восстановление сохраненной сессии для устройства {conf['device_id']}...")
+                self.client.api.token = conf["access_token"]
+                self.client.mxid = conf["username"]
+                self.client.device_id = conf["device_id"]
+            else:
+                self.log.info("Выполняю первичный вход в Matrix по паролю...")
+                await self.client.login(
+                    identifier=conf["username"],
+                    password=conf["password"],
+                    device_id=conf["device_id"],
+                    initial_device_display_name="MXUserBot"
+                )
+                
+                await self.config.update_db_key("matrix.access_token", self.client.api.token)
+                await self.config.update_db_key("matrix.device_id", self.client.device_id)
+                self.config.save()
+                
+                self.log.info(f"Вход выполнен как {self.client.device_id}! Токен сохранен.")
 
             self.client.crypto = OlmMachine(self.client, self.crypto_store, self.state_store)
             self.client.crypto.allow_key_requests = True
-
 
             self.client.remove_event_handler(EventType.TO_DEVICE_ENCRYPTED, self.client.crypto.handle_to_device_event)
             async def safe_handle_to_device(evt):
@@ -406,6 +413,7 @@ class MXUserBot(Program):
             
             await self.client.crypto.load()
             if not await self.crypto_store.get_device_id():
+                await self.crypto_store.put_device_id(self.client.device_id)
                 self.log.info("Публикация ключей устройства в Matrix...")
                 await self.client.crypto.share_keys()
 
@@ -470,7 +478,7 @@ class MXUserBot(Program):
                 }
             })
 
-            await self.client.start(filter_data=sync_filter)
+            await self.client.start(filter_data=None)
         except Exception as e:
             self.log.exception(f"Критическая ошибка при запуске бота: {e}")
 
