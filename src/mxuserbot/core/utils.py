@@ -118,49 +118,49 @@ async def send_image(
 
     extra = {"relates_to": relates_to} if relates_to else {}
 
-    if is_enc:
-        if not file_bytes and url:
-            async with aiohttp.ClientSession() as s:
-                async with s.get(url) as r:
-                    file_bytes = await r.read()
+    # if is_enc:
+        # if not file_bytes and url:
+        #     async with aiohttp.ClientSession() as s:
+        #         async with s.get(url) as r:
+        #             file_bytes = await r.read()
 
-        enc_data, enc_info = encrypt_attachment(file_bytes)
+    #     enc_data, enc_info = encrypt_attachment(file_bytes)
 
+    #     mxc = await mx.upload_media(
+    #         enc_data,
+    #         mime_type="application/octet-stream",
+    #         filename=file_name,
+    #     )
+
+    #     enc_info.url = mxc
+
+    #     content_data = {
+    #         "msgtype": MessageType.IMAGE,
+    #         "body": plain_caption or file_name,
+    #         "filename": file_name,
+    #         "info": info,
+    #         "file": enc_info,
+    #         **extra,
+    #     }
+
+    # else:
+    if file_bytes and not url:
         mxc = await mx.upload_media(
-            enc_data,
-            mime_type="application/octet-stream",
+            file_bytes,
+            mime_type="image/png",
             filename=file_name,
         )
-
-        enc_info.url = mxc
-
-        content_data = {
-            "msgtype": MessageType.IMAGE,
-            "body": plain_caption or file_name,
-            "filename": file_name,
-            "info": info,
-            "file": enc_info,
-            **extra,
-        }
-
     else:
-        if file_bytes and not url:
-            mxc = await mx.upload_media(
-                file_bytes,
-                mime_type="image/png",
-                filename=file_name,
-            )
-        else:
-            mxc = url
+        mxc = url
 
-        content_data = {
-            "msgtype": MessageType.IMAGE,
-            "body": plain_caption or file_name,
-            "filename": file_name,
-            "info": info,
-            "url": mxc,
-            **extra,
-        }
+    content_data = {
+        "msgtype": MessageType.IMAGE,
+        "body": plain_caption or file_name,
+        "filename": file_name,
+        "info": info,
+        "url": mxc,
+        **extra,
+    }
 
     if caption and html:
         content_data["format"] = Format.HTML
