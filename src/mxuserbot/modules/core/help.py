@@ -20,7 +20,7 @@ class HelperModule(loader.Module):
         "no_cmds": "Нет команд",
         "info_caption" : (
             "<b><u>MxUserBot Info</u></b><br>"
-            "🆔 | Версия: <code>0.1</code><br>"
+            "🆔 | Версия: <code>0.2</code><br>"
             "🌐 | Статус: <code>Alpha</code><br>"
             "👩‍💻 | Исходники: "
             "<a href='https://github.com/PashaHatsune/MxUserbot'>GitHub</a><br>"
