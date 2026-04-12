@@ -8,6 +8,7 @@ class Meta:
     version = "1.0.0"
     tags = ["settings"]
 
+
 @loader.tds
 class PrefixModule(loader.Module):
     strings = {
@@ -44,10 +45,10 @@ class PrefixModule(loader.Module):
             )
 
         query = [new_prefix]
-        await self._set("prefix", query)
+        await self._db.set("core", "prefix", query)
         
         if hasattr(mx, "prefixes"):
-            mx.prefixes = query
+            mx.prefixes = [query]
 
         await mx.answer(
             self.strings.get("success_set_prefix").format(new_prefix=new_prefix)
