@@ -134,8 +134,12 @@ class MXUserBot(Program):
         await self.config.update_db_key("matrix.log_room_id", str(new_room_id))
 
 
-        await utils.answer(self.client, new_room_id, "✅ | Комната логов успешно инициализирована.")
-
+        await utils.answer(
+            self.interface, 
+            "✅ | Комната логов успешно инициализирована.", 
+            room_id=new_room_id,
+            edit_id=None
+        )
 
         self.config["matrix"]["log_room_id"] = str(new_room_id)
         self.config.save()
