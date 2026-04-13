@@ -53,7 +53,7 @@ class CallBack:
         target_user = evt.state_key 
 
         for mod in self.mx.active_modules.values():
-            # if mod.enabled and getattr(mod, "_is_ready", False):
+            if mod.enabled and getattr(mod, "_is_ready", False):
                 try:
                     if hasattr(mod, "_matrix_member"):
                         await mod._matrix_member(self.mx, evt)
@@ -89,9 +89,8 @@ class CallBack:
 
         if not await self.mx.starts_with_command(real_body):
             for mod in self.mx.active_modules.values():
-                # if mod.enabled and getattr(mod, "_is_ready", False):
+                if mod.enabled and getattr(mod, "_is_ready", False):
                     try:
-                        print(1)
                         await mod._matrix_message(self.mx.interface, evt)
                     except Exception:
                         logger.exception(f"Error in watcher in {mod.name}")
@@ -133,7 +132,6 @@ class CallBack:
                             self.mx.interface._current_event.reset(token)
                         
 
-                        # await func(self.mx.interface, evt)
                     except Exception as e:
                         logger.exception(f"Error in command {cmd_name}")
                         await self.mx.client.send_text(evt.room_id, f"❌ Ошибка: {e}")
