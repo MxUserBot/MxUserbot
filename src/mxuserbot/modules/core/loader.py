@@ -47,7 +47,7 @@ class LoaderModule(loader.Module):
     @loader.command()
     async def mdl(self, mx: Any, event: MessageEvent):
         """<url/id> — Download a module via link or ID"""
-        arg = utils.get_args_raw(event)
+        arg = await utils.get_args_raw(mx, event)
         
         if not arg:
             return await utils.answer(mx, self.strings["no_url_or_id"])
@@ -128,7 +128,7 @@ class LoaderModule(loader.Module):
     @loader.command()
     async def msearch(self, mx: Any, event: MessageEvent):
         """<query> — Search modules in the official repository"""
-        query = utils.get_args_raw(event)
+        query = await utils.get_args_raw(mx, event)
         if not query:
             return await utils.answer(mx, self.strings["search_no_query"])
 
@@ -186,7 +186,7 @@ class LoaderModule(loader.Module):
     @loader.command()
     async def unmd(self, mx: Any, event: MessageEvent):
         """<filename> — Unload and permanently delete a community module"""
-        name = utils.get_args_raw(event)
+        name = await utils.get_args_raw(mx, event)
 
         if not name:
             return await utils.answer(mx, self.strings["no_name"])
