@@ -1,4 +1,5 @@
 
+import asyncio
 import contextvars
 
 
@@ -24,7 +25,7 @@ from mautrix.types import TrustState
 from mautrix.crypto import OlmMachine
 
 
-from .core.types import InterceptHandler
+from .core.types import BotSASVerification, InterceptHandler
 from .core.types import Config
 from .core.callback import CallBack
 from .core.loader import Loader
@@ -213,7 +214,7 @@ class MXUserBot(Program):
         self
     ) -> None:
         """Настройка форматирования и обработчиков для Loguru."""
-        logging.basicConfig(handlers=[InterceptHandler()], level="WARNING", force=True)
+        logging.basicConfig(handlers=[InterceptHandler()], level="INFO", force=True)
         logger.remove()
         
         log_format = (
@@ -333,21 +334,14 @@ class MXUserBot(Program):
             session_wrapper = AsyncSessionWrapper() 
             self._db = Database(session_wrapper)
             await self._db._sw.init_db()
-
             self.config.db = self._db
             await self.config.load_from_db()
             conf = self.config["matrix"]
 
             db_path = os.path.join(os.getcwd(), "sekai.db")
-            self.log.info(f"Подключение к базе ключей E2EE: {db_path}")
-            
             self.crypto_db = MautrixDatabase.create(f"sqlite:///{db_path}")
             await self.crypto_db.start() 
-
-            self.log.info("Инициализация таблиц базы данных...")
-            
             await PgCryptoStore.upgrade_table.upgrade(self.crypto_db)
-            
             await PgCryptoStateStore.upgrade_table.upgrade(self.crypto_db)
 
             self.state_store = PgCryptoStateStore(self.crypto_db)
@@ -357,75 +351,96 @@ class MXUserBot(Program):
                 api=HTTPAPI(base_url=conf["base_url"]),
                 state_store=self.state_store,
                 sync_store=self.crypto_store
-            
             )
 
             if conf.get("access_token"):
-                self.log.info(f"Восстановление сохраненной сессии для устройства {conf['device_id']}...")
                 self.client.api.token = conf["access_token"]
                 self.client.mxid = conf["username"]
                 self.client.device_id = conf["device_id"]
             else:
-                self.log.info("Выполняю первичный вход в Matrix по паролю...")
                 await self.client.login(
                     identifier=conf["username"],
                     password=conf["password"],
                     device_id=conf["device_id"],
                     initial_device_display_name="MXUserBot"
                 )
-                
                 await self.config.update_db_key("matrix.access_token", self.client.api.token)
                 await self.config.update_db_key("matrix.device_id", self.client.device_id)
                 self.config.save()
-                
-                self.log.info(f"Вход выполнен как {self.client.device_id}! Токен сохранен.")
 
             self.client.crypto = OlmMachine(self.client, self.crypto_store, self.state_store)
+            
             self.client.crypto.allow_key_requests = True
-
-            self.client.remove_event_handler(EventType.TO_DEVICE_ENCRYPTED, self.client.crypto.handle_to_device_event)
-            async def safe_handle_to_device(evt):
-                try:
-                    await self.client.crypto.handle_to_device_event(evt)
-                except Exception as e:
-                    self.log.warning(f"Пропущено To-Device сообщение (битый ключ): {e}")
-            self.client.add_event_handler(EventType.TO_DEVICE_ENCRYPTED, safe_handle_to_device)
             
             await self.client.crypto.load()
+
+            sas_verifier = BotSASVerification(self.client)
+            real_decrypt_method = self.client.crypto._decrypt_olm_event
+
+            async def hooked_decrypt(evt):
+                decrypted = await real_decrypt_method(evt)
+                if decrypted:
+                    t = decrypted.type.t if hasattr(decrypted.type, "t") else str(decrypted.type)
+                    if "m.key.verification" in t:
+                        asyncio.create_task(sas_verifier.handle_decrypted_event(decrypted))
+                return decrypted
+
+            self.client.crypto._decrypt_olm_event = hooked_decrypt
+
             if not await self.crypto_store.get_device_id():
                 await self.crypto_store.put_device_id(self.client.device_id)
-                self.log.info("Публикация ключей устройства в Matrix...")
                 await self.client.crypto.share_keys()
 
-            async def trust_own_devices():
-                self.log.info("Синхронизация списка собственных устройств...")
-                try:
-                    resp = await self.client.api.request(Method.GET, "/_matrix/client/v3/devices")
-                    my_devices = resp.get("devices",[])
-                except Exception as e:
-                    self.log.error(f"Не удалось получить список устройств: {e}")
-                    return
+            # 4. Авто-траст (опционально)
+            # await self.trust_own_devices() 
 
-                cached_devices = await self.crypto_store.get_devices(self.client.mxid) or {}
-                updated_count = 0
-                for dev in my_devices:
-                    d_id = dev.get("device_id")
-                    if not d_id or d_id == self.client.device_id: continue
+            self.log.success("UserBot E2EE инициализирован. Запуск sync...")
+            # self.client.crypto = OlmMachine(self.client, self.crypto_store, self.state_store)
+            # self.client.crypto.allow_key_requests = True
+
+            # self.client.remove_event_handler(EventType.TO_DEVICE_ENCRYPTED, self.client.crypto.handle_to_device_event)
+            # async def safe_handle_to_device(evt):
+            #     try:
+            #         await self.client.crypto.handle_to_device_event(evt)
+            #     except Exception as e:
+            #         self.log.warning(f"Пропущено To-Device сообщение (битый ключ): {e}")
+            # self.client.add_event_handler(EventType.TO_DEVICE_ENCRYPTED, safe_handle_to_device)
+            
+            # await self.client.crypto.load()
+            # if not await self.crypto_store.get_device_id():
+            #     await self.crypto_store.put_device_id(self.client.device_id)
+            #     self.log.info("Публикация ключей устройства в Matrix...")
+            #     await self.client.crypto.share_keys()
+
+            # async def trust_own_devices():
+            #     self.log.info("Синхронизация списка собственных устройств...")
+            #     try:
+            #         resp = await self.client.api.request(Method.GET, "/_matrix/client/v3/devices")
+            #         my_devices = resp.get("devices",[])
+            #     except Exception as e:
+            #         self.log.error(f"Не удалось получить список устройств: {e}")
+            #         return
+
+            #     cached_devices = await self.crypto_store.get_devices(self.client.mxid) or {}
+            #     updated_count = 0
+            #     for dev in my_devices:
+            #         d_id = dev.get("device_id")
+            #         if not d_id or d_id == self.client.device_id: continue
                     
-                    identity = await self.client.crypto.get_or_fetch_device(self.client.mxid, d_id)
-                    if identity and identity.trust != TrustState.VERIFIED:
-                        identity.trust = TrustState.VERIFIED
-                        cached_devices[d_id] = identity
-                        updated_count += 1
-                        self.log.debug(f"Устройство {d_id} ({dev.get('display_name', 'Unknown')}) доверено.")
+            #         identity = await self.client.crypto.get_or_fetch_device(self.client.mxid, d_id)
+            #         if identity and identity.trust != TrustState.VERIFIED:
+            #             identity.trust = TrustState.VERIFIED
+            #             cached_devices[d_id] = identity
+            #             updated_count += 1
+            #             self.log.debug(f"Устройство {d_id} ({dev.get('display_name', 'Unknown')}) доверено.")
 
-                if updated_count > 0:
-                    await self.crypto_store.put_devices(self.client.mxid, cached_devices)
-                    self.log.info(f"Успешно верифицировано новых устройств: {updated_count}")
-                else:
-                    self.log.info("Все устройства уже верифицированы.")
+            #     if updated_count > 0:
+            #         await self.crypto_store.put_devices(self.client.mxid, cached_devices)
+            #         self.log.info(f"Успешно верифицировано новых устройств: {updated_count}")
+            #     else:
+            #         self.log.info("Все устройства уже верифицированы.")
 
-            await trust_own_devices()
+            # await trust_own_devices()
 
 
             await self._setup_log_room()
