@@ -1,21 +1,35 @@
-
-# import re
-
+import asyncio
+import os
+import platform
+import shlex
+from typing import Optional, Union
 
 import aiohttp
+import psutil
+
+from mautrix.api import Method
+from mautrix.crypto.attachments import encrypt_attachment
+from mautrix.types import (
+    EncryptedEvent,
+    EventID,
+    EventType,
+    Format,
+    ImageInfo,
+    MediaMessageEventContent,
+    MessageEvent,
+    MessageType,
+    RelatesTo,
+    RelationType,
+    RoomID,
+    TextMessageEventContent,
+)
 from mautrix.util.formatter import parse_html
 
-
-from mautrix.types import EventID, EventType, Format, ImageInfo, MediaMessageEventContent, MessageEvent, MessageType, RelatesTo, RoomID, TextMessageEventContent
-
+RPC_NAMESPACE = "com.ip-logger.msc4320.rpc"
 
 
-import platform
-import psutil
-import datetime
-
-def get_platform():
-    """Возвращает форматированную строку с данными о системе."""
+def get_platform() -> str:
+    """Returns a formatted string containing system data."""
     os_info = f"{platform.system()} {platform.release()}"
     hostname = platform.node()
     ram = psutil.virtual_memory()
@@ -34,54 +48,22 @@ def get_platform():
     )
 
 
-
-def get_commands(cls):
+def get_commands(cls) -> dict:
+    """Returns a dictionary of available commands for the given class."""
     cmds = {}
     for attr_name in dir(cls):
         method = getattr(cls, attr_name)
-        if callable(method) and getattr(method, 'is_command', False):
+        if callable(method) and getattr(method, "is_command", False):
             cmds[method.command_name] = method
     return cmds
 
-# def is_owner(event):
-#     return event.sender in owners
-
-
-# from loguru import logger
-# навайбкожено, переписать
-from mautrix.types import (
-    RoomID, EventID, MessageType, RelatesTo, 
-    TextMessageEventContent, Format, RelationType
-)
-from mautrix.util.formatter import parse_html
-
-
-
-
-
-from mautrix.util import markdown
-from mautrix.crypto.attachments import encrypt_attachment
-
-import io
-from PIL import Image
-from mautrix.types import ImageInfo 
-
-import aiohttp
-from mautrix.types import (
-    MessageType, EventType, MediaMessageEventContent, 
-    ImageInfo, Format
-)
-from mautrix.crypto.attachments import encrypt_attachment
-
-import asyncio
-from mautrix.types import EncryptedEvent, MessageEvent, TextMessageEventContent, MessageType, RelatesTo, RelationType, Format
 
 async def decrypt_event(mx, event_to_decrypt: EncryptedEvent, context_event: MessageEvent = None) -> str | None:
     """
-    Универсальная утилита для дешифровки события.
-    Если ключа нет: запрашивает его в фоне.
-    Если передан context_event, бот автоматически ответит пользователю в чат.
-    Возвращает строку (текст) или None.
+    Universal utility for event decryption.
+    If the key is missing, it requests it in the background.
+    If context_event is provided, the bot will automatically reply to the user in the chat.
+    Returns a decrypted string or None.
     """
     try:
         decrypted = await mx.client.crypto.decrypt_megolm_event(event_to_decrypt)
@@ -118,13 +100,14 @@ async def decrypt_event(mx, event_to_decrypt: EncryptedEvent, context_event: Mes
             await answer(mx, text=f"❌ <b>Ошибка дешифровки:</b> {de}", event=context_event)
         return None
 
+
 async def get_reply_text(mx, event: MessageEvent) -> str | None | bool:
     """
-    Извлекает текст из реплая (с авто-дешифровкой и обработкой ключей).
-    Возвращает:
-    - str (текст), если всё успешно
-    - False, если реплая нет
-    - None, если ключа нет или произошла ошибка (бот УЖЕ ответил об этом в чат)
+    Extracts text from a reply with auto-decryption and key handling.
+    Returns:
+    - str (text) if successful
+    - False if there is no reply
+    - None if the key is missing or an error occurred
     """
     reply_to = getattr(event.content, "relates_to", None)
     if not reply_to or getattr(reply_to, "in_reply_to", None) is None:
@@ -143,7 +126,7 @@ async def get_reply_text(mx, event: MessageEvent) -> str | None | bool:
 
 
 async def get_args_raw(mx, event) -> str:
-    """Извлечение аргументов команды. Теперь использует нашу новую дешифровку (в тихом режиме)."""
+    """Extracts command arguments handling both standard messages and replies (in silent mode)."""
     cmd_text = ""
     if isinstance(event, str):
         cmd_text = event
@@ -193,6 +176,7 @@ async def answer(
     edit_id: str | None = -1,
     **kwargs
 ) -> str:
+    """Sends or edits a message in the specified Matrix room."""
     ctx_event = None
     if hasattr(mx, "_current_event"):
         try:
@@ -215,7 +199,7 @@ async def answer(
             edit_id = None
 
     if not room_id:
-        mx.logger.error("utils.answer() вызван без room_id и без контекста!")
+        mx.logger.error("utils.answer() called without room_id and context!")
         return ""
 
     plain_text = await parse_html(text) if html else text
@@ -244,25 +228,21 @@ async def answer(
             formatted_body=text if html else None
         )
 
-    allowed =["timestamp", "txn_id"]
+    allowed = ["timestamp", "txn_id"]
     matrix_kwargs = {k: v for k, v in kwargs.items() if k in allowed}
 
     return await mx.client.send_message(room_id, content, **matrix_kwargs)
 
 
-import aiohttp
-from typing import Union, Optional
-
 async def request(
     url: str, 
     method: str = "GET", 
-    return_type: str = "json", # json, text, bytes, или raw
+    return_type: str = "json",
     params: Optional[dict] = None,
     headers: Optional[dict] = None,
     **kwargs
-) -> Union[dict, str, bytes, aiohttp.ClientResponse]:
-    """Универсальный сокращатель HTTP-запросов"""
-    
+) -> Union[dict, str, bytes, aiohttp.ClientResponse, None]:
+    """Universal HTTP request shortcut supporting multiple return types."""
     async with aiohttp.ClientSession() as session:
         try:
             async with session.request(method, url, params=params, headers=headers, **kwargs) as response:
@@ -273,13 +253,13 @@ async def request(
                 elif return_type == "bytes":
                     return await response.read()
                 return response
-        except Exception as e:
-            print
+        except Exception:
             return None
+
 
 async def send_image(
     mx,
-    room_id: Union[str, MessageEvent], # Разрешаем принимать и строку, и событие
+    room_id: Union[str, MessageEvent],
     url: str | None = None,
     file_bytes: bytes | None = None,
     info: ImageInfo | None = None,
@@ -289,10 +269,7 @@ async def send_image(
     html: bool = True,
     **kwargs,
 ):
-    
-
-
-    
+    """Downloads (if necessary), optionally encrypts, and sends an image to a specific room."""
     if not isinstance(room_id, str):
         room_id = room_id.room_id
 
@@ -302,13 +279,12 @@ async def send_image(
 
     if not file_bytes and url:
         if isinstance(url, str) and url.startswith("http"):
-            # Используем твою новую функцию request, которую мы обсуждали!
             file_bytes = await request(url, return_type="bytes")
         elif isinstance(url, str) and url.startswith("mxc://"):
             file_bytes = await mx.client.download_media(url)
 
     if not file_bytes:
-        raise ValueError("Не удалось получить байты изображения")
+        raise ValueError("Failed to retrieve image bytes")
 
     file_name = file_name or "image.png"
     mime_type = info.mimetype if info else "image/png"
@@ -342,16 +318,6 @@ async def send_image(
     return await mx.client.send_message_event(room_id, EventType.ROOM_MESSAGE, content, **kwargs)
 
 
-
-from mautrix.types import TextMessageEventContent
-
-from mautrix.api import Method
-from typing import Optional
-
-
-RPC_NAMESPACE = "com.ip-logger.msc4320.rpc"
-from typing import Optional, Union
-
 async def set_rpc_media(
     mx,
     artist: str,
@@ -359,15 +325,14 @@ async def set_rpc_media(
     track: str,
     length: Optional[int] = None,
     complete: Optional[int] = None,
-    cover_art: Optional[Union[str, bytes]] = None, # Теперь принимает и байты, и ссылки
+    cover_art: Optional[Union[str, bytes]] = None,
     player: Optional[str] = None,
     streaming_link: Optional[str] = None
 ):
     """
-    Установить статус 'Слушает' (m.rpc.media). 
-    Если cover_art — это URL или байты, она будет автоматически загружена в Matrix.
+    Set the 'Listening' status (m.rpc.media).
+    If cover_art is a URL or bytes, it will be automatically uploaded to Matrix.
     """
-    
     if cover_art:
         if isinstance(cover_art, bytes):
             mxc = await mx.client.upload_media(cover_art)
@@ -380,6 +345,7 @@ async def set_rpc_media(
                 cover_art = str(mxc)
             else:
                 cover_art = None
+                
     data = {
         "type": f"{RPC_NAMESPACE}.media",
         "artist": artist,
@@ -389,8 +355,10 @@ async def set_rpc_media(
 
     if length is not None or complete is not None:
         data["progress"] = {}
-        if length is not None: data["progress"]["length"] = length
-        if complete is not None: data["progress"]["complete"] = complete
+        if length is not None:
+            data["progress"]["length"] = length
+        if complete is not None:
+            data["progress"]["complete"] = complete
     
     if cover_art: 
         data["cover_art"] = cover_art
@@ -404,6 +372,7 @@ async def set_rpc_media(
     endpoint = f"_matrix/client/v3/profile/{mx.client.mxid}/{RPC_NAMESPACE}"
     return await mx.client.api.request(Method.PUT, endpoint, content={RPC_NAMESPACE: data})
 
+
 async def set_rpc_activity(
     mx,
     name: str,
@@ -411,42 +380,30 @@ async def set_rpc_activity(
     image: Optional[str] = None
 ):
     """
-    Установить статус 'Играет/Активность' (m.rpc.activity).
-    :param name: Название активности/игры (обязательно)
-    :param details: Детали (карта, уровень, текущее состояние)
-    :param image: Ссылка MXC на иконку активности
+    Set the 'Playing/Activity' status (m.rpc.activity).
     """
     data = {
         "type": f"{RPC_NAMESPACE}.activity",
         "name": name
     }
 
-    if details: data["details"] = details
-    if image: data["image"] = image
+    if details:
+        data["details"] = details
+    if image:
+        data["image"] = image
 
     endpoint = f"_matrix/client/v3/profile/{mx.client.mxid}/{RPC_NAMESPACE}"
     return await mx.client.api.request(Method.PUT, endpoint, content={RPC_NAMESPACE: data})
 
 
 async def clear_rpc(mx):
-    """
-    Удалить Rich Presence статус согласно спецификации (DELETE или пустой PUT).
-    """
+    """Removes the Rich Presence status completely according to the specification."""
     endpoint = f"_matrix/client/v3/profile/{mx.client.mxid}/{RPC_NAMESPACE}"
     return await mx.client.api.request(Method.DELETE, endpoint)
 
 
-
-
-
-
-def get_args(message):
-    import shlex
-    """
-    Get arguments from message
-    :param message: Message or string to get arguments from
-    :return: List of arguments
-    """
+def get_args(message) -> list:
+    """Extract arguments from a message string using shell-like syntax."""
     if not (message := getattr(message, "message", message)):
         return False
 
@@ -458,50 +415,26 @@ def get_args(message):
     try:
         split = shlex.split(message)
     except ValueError:
-        return message  # Cannot split, let's assume that it's just one long message
-
-
+        return message
 
     return list(filter(lambda x: len(x) > 0, split))
-from mautrix.types import EncryptedEvent
-
-import os
 
 
-from mautrix.types import EncryptedEvent
-
-
-
-def escape_html(text: str, /) -> str:  # sourcery skip
-    """
-    Pass all untrusted/potentially corrupt input here
-    :param text: Text to escape
-    :return: Escaped text
-    """
+def escape_html(text: str, /) -> str:
+    """Escape specific HTML characters in a string to avoid injection."""
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def escape_quotes(text: str, /) -> str:
-    """
-    Escape quotes to html quotes
-    :param text: Text to escape
-    :return: Escaped text
-    """
+    """Escape quotes to their corresponding HTML entities."""
     return escape_html(text).replace('"', "&quot;")
 
 
 def get_base_dir() -> str:
-    """
-    Get directory of this file
-    :return: Directory of this file
-    """
+    """Get the absolute directory path of the current file."""
     return get_dir(__file__)
 
 
 def get_dir(mod: str) -> str:
-    """
-    Get directory of given module
-    :param mod: Module's `__file__` to get directory of
-    :return: Directory of given module
-    """
+    """Get the absolute directory path of a given module."""
     return os.path.abspath(os.path.dirname(os.path.abspath(mod)))
