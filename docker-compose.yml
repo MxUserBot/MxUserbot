@@ -1,0 +1,9 @@
+services:
+  mxuserbot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mx_userbot_app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
