@@ -78,10 +78,10 @@ class MXUserBot(Program):
     def __init__(self) -> None:
         super().__init__(
             module='main',
-            name='sekai-user-bot',
-            description="Sekai Userbot",
+            name='MXUserBot',
+            description="MXUserbot - matrix userbot.",
             command="-",
-            version="0.6 | ALPHA",
+            version="1.0 | BETA",
             config_class=Config
         )
         self.client: Optional[Client] = None
