@@ -119,7 +119,6 @@ def setup_routes(app: FastAPI, mx, auth_event):
             return RedirectResponse(url="/panel")
 
         import json
-        # Загрузка локализации
         locale_path = os.path.join(os.path.dirname(__file__), "locale.json")
         with open(locale_path, 'r', encoding='utf-8') as f:
             locale = json.load(f)
@@ -131,7 +130,6 @@ def setup_routes(app: FastAPI, mx, auth_event):
         try:
             with open(html_path, "r", encoding="utf-8") as f:
                 html = f.read()
-            # Применение локализации
             for key, value in locale.get(lang, locale["en"]).items():
                 html = html.replace(f'[I18N:{key}]', value)
             return html
