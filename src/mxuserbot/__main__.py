@@ -31,6 +31,8 @@ from mautrix.util.async_db import Database as MautrixDatabase
 from mautrix.util.program import Program
 from mautrix.util.config import BaseFileConfig, ConfigUpdateHelper, RecursiveDict
 from ruamel.yaml.comments import CommentedMap
+
+from mautrix.errors import MatrixConnectionError
 class Config(BaseFileConfig):
     """
     Dummy config class to satisfy mautrix Program requirements.
@@ -91,7 +93,7 @@ class MXBotInterface:
         """Проксирует отправку сырого контента в реальный клиент."""
         return await self.client.send_message(room_id, content, **kwargs)
 
-
+from mautrix.client import InternalEventType
 
 class MXUserBot(Program):
     """Main userbot class."""
@@ -331,10 +333,11 @@ class MXUserBot(Program):
             access_token = await self._db.get("core", "access_token")
 
             if not access_token:
-                self.log.warning("⚠️ Данные авторизации не найдены!")
-                self.log.info("🌐 Откройте http://127.0.0.1:8000/docs и выполните /api/auth")
+                self.log.warning("⚠️ | Authorization data not found!!")
+                self.log.info("🌐 | open http://127.0.0.1:8000/ to authorize.")
                 
                 await self.auth_completed.wait()
+                access_token = await self._db.get("core", "access_token")
                 
                 self.log.success("✅ Авторизация получена. Запускаю криптографию...")
 
@@ -375,11 +378,11 @@ class MXUserBot(Program):
                     if decrypted:
                         t = decrypted.type.t if hasattr(decrypted.type, "t") else str(decrypted.type)
                         if "m.key.verification" in t:
-                            self.log.info(f"🔑 Поймано событие верификации: {t}")
+                            self.log.info(f"🔑 | verif request: {t}")
                             asyncio.create_task(self.sas_verifier.handle_decrypted_event(decrypted))
                     return decrypted
                 except Exception as e:
-                    self.log.error(f"Ошибка расшифровки: {e}")
+                    self.log.error(f"Oshibka rashifrovki: {e}")
                     return None
 
             self.client.crypto._decrypt_olm_event = hooked_decrypt
@@ -387,6 +390,17 @@ class MXUserBot(Program):
             if not await self.crypto_store.get_device_id():
                 await self.crypto_store.put_device_id(self.client.device_id)
                 await self.client.crypto.share_keys()
+
+
+            self.log.info("📡 | Checking connection to Matrix server...")
+            while True:
+                try:
+                    await self.client.whoami()
+                    break # Connection success
+                except (MatrixConnectionError, OSError):
+                    self.log.error("🌐 Network is unreachable. Retrying in 5 seconds...")
+                    await asyncio.sleep(5)
+
 
             await self._setup_log_room()
             await self._setup_security()
@@ -399,14 +413,38 @@ class MXUserBot(Program):
             await self._register_handlers()
 
             self.start_time = int(time.time() * 1000)
-            self.log.success(f"✅ UserBot запущен: {self.client.mxid}")
             
-            await self.client.start(filter_data=None)
+            sync_started = asyncio.Event()
 
+            async def handle_first_sync(data):
+                if not sync_started.is_set():
+                    sync_started.set()
+                    self.client.remove_event_handler(InternalEventType.SYNC_SUCCESSFUL, handle_first_sync)
 
-            self.client.crypto.sign_own_device
+            self.client.add_event_handler(InternalEventType.SYNC_SUCCESSFUL, handle_first_sync)
+
+            self.log.info("📡 | Connecting to Matrix server...")
+            sync_task = self.client.start(filter_data=None)
+            
+            if asyncio.iscoroutine(sync_task):
+                sync_task = asyncio.create_task(sync_task)
+
+            try:
+                await asyncio.wait_for(sync_started.wait(), timeout=30)
+                self.log.success(f"✅ | UserBot successfully synced and running: {self.client.mxid}")
+                
+                await self.log_to_room(f"🚀 MXUserBot is online!\nUser: {self.client.mxid}")
+                
+            except asyncio.TimeoutError:
+                self.log.error("❌ | Connection timeout: Server is not responding to sync.")
+            
+
         except Exception as e:
-            self.log.exception(f"Критическая ошибка запуска: {e}")
+
+            self.log.exception(f"{e}")
+        except MatrixConnectionError:
+            print(1)
+            sys.exit(1)
 
 
 if __name__ == "__main__":
@@ -415,5 +453,6 @@ if __name__ == "__main__":
         bot.run()
     except KeyboardInterrupt:
         logger.info("Работа бота завершена пользователем (Ctrl+C).")
+        sys.exit(1)
     except Exception:
         traceback.print_exc(file=sys.stderr)
