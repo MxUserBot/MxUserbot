@@ -5,6 +5,8 @@ from pathlib import Path
 from functools import wraps
 from loguru import logger
 
+from mautrix.errors import MatrixConnectionError
+
 OWNER = 1 << 0       
 SUDO = 1 << 1        
 EVERYONE = 1 << 2    
@@ -51,7 +53,11 @@ class SekaiSecurity:
         try:
             resp = await self.bot.client.whoami()
             self.owners.add(resp.user_id)
-        except: sys.exit(1)
+        except MatrixConnectionError as e:
+            raise e
+        except Exception as e:
+            logger.error(e)
+            sys.exit(1)
 
         db_owners = await self._db.get("core", "owners",[])
         if isinstance(db_owners, list): self.owners.update(db_owners)
