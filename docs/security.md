@@ -1,125 +1,42 @@
+# Security in Sekai
 
-# Безопасность
+Let's be real: Sekai isn't a bulletproof sandbox, but it’s got a solid three-layer defense to keep things from breaking. It’s less of a "vault" and more of a "smart fence"—it keeps honest people honest and makes it much harder for shady modules to mess with your bot.
 
-Короткая версия: в проекте есть защитный слой, но это не полноценная изоляция стороннего кода. `community`-модуль по-прежнему выполняется в том же Python-процессе, что и весь userbot.
+## The Three Layers
+1. **ACL (Access Control):** Basic "Who are you?" check using Owners, Sudos, and temporary permissions.
+2. **Static Check:** We scan community modules **before** they even load. If we see something suspicious, they don't get to run.
+3. **Runtime Firewall:** A live "audit hook" that watches what the code is doing while it's running (like trying to delete files or touch raw memory).
 
-## Что есть сейчас
+---
 
-Основная логика находится в `src/mxuserbot/core/security.py`.
+## 1. The "Pre-Load" Scan (Static Analysis)
+When you try to load a **community module**, we peek at its source code using AST (Abstract Syntax Tree) before it even compiles. 
 
-### Owners
+### What’s on the Blacklist?
+If a module tries to touch these directly, it’s **blocked immediately**:
+*   **Session control:** `login`, `logout`, `stop`, `start`.
+*   **Sensitive data:** `crypto`, `api` (the raw client), `device_id`.
+*   **Sneaky tricks:** If you try to bypass the scan using `getattr(client, "crypto")`, we’ll catch that too by scanning for forbidden strings.
 
-При старте `SekaiSecurity.init_security()`:
+**Result:** If the module is sketchy, it simply won't load. Period.
 
-- делает `whoami()` у Matrix-клиента;
-- добавляет текущий MXID в `owners`;
-- подтягивает список дополнительных owners из БД по ключу `core/owners`;
-- сохраняет итоговый список обратно в БД.
+---
 
-Проверка владельца потом используется:
+## 2. The Runtime Firewall
+If a module makes it past the scan, we still watch it live. We use a lightweight frame-checker (`sys._getframe`) to see if the caller is a community module.
 
-- в `MXBotInterface.is_owner()`;
-- в command-dispatch внутри `CallBack.message_cb()`.
+### What we block in real-time:
+*   **Writing files:** You can read files, but you can't write, append, or delete them.
+*   **Core hijacking:** Community modules can't import internal "Core" modules.
+*   **Memory hacks:** No `ctypes` allowed. You can't touch C-level memory.
 
-Практически это означает: команды исполняются только для owners.
+---
 
-### `gate()`
+## The Reality Check (Limitations)
+Don't get overconfident. This is a userbot, not a high-security OS. 
+*   **No process isolation:** Everything still runs in one process.
+*   **Reading is allowed:** A module can still read your local files (for now).
+*   **Network is open:** Modules can still talk to the internet and external APIs.
+*   **It’s a Blacklist:** We block known bad paths, but a determined "hacker" might find a new one.
 
-`SekaiSecurity.gate()` возвращает wrapper, который пропускает обработчик только если:
-
-- sender пустой;
-- или sender входит в `owners`.
-
-В текущем runtime этот gate применяется к `invite_cb()`.
-
-Важно: это не универсальный декоратор на все callback-и проекта. Он не оборачивает watcher hooks модулей автоматически.
-
-### Audit hook
-
-`SekaiSecurity._enable_fs_firewall()` добавляет `sys.addaudithook(...)` и пытается отлавливать:
-
-- `open` в режимах записи;
-- `os.remove`, `os.unlink`, `os.rmdir`;
-- `os.rename`;
-- часть импортов из `mxuserbot.modules.core`;
-- события, начинающиеся с `ctypes`.
-
-Если действие пришло из `modules/community`, код пытается заблокировать его через `PermissionError`.
-
-### Ограничение записи в код
-
-Для community-модулей дополнительно проверяется:
-
-- нельзя изменять или удалять `.py`-файлы;
-- нельзя лезть в директорию core-модулей.
-
-Это полезно как защита от случайной порчи ядра и от части прямолинейных попыток self-modifying behavior.
-
-### Защита core-модулей в памяти
-
-При загрузке core-модуля loader подменяет `__setattr__` класса так, чтобы community-код не мог просто так переписать атрибуты core-объекта, если вызов идет из `modules/community`.
-
-Это снова best-effort защита, а не полноценный security boundary.
-
-### Защита от перезаписи имен
-
-Loader не дает community-модулю подменить core-модуль:
-
-- по stem имени файла;
-- по имени класса;
-- по `Meta.name`.
-
-Это снижает риск конфликтов и случайной подмены встроенного поведения.
-
-## Что эта система не защищает
-
-Ниже самые важные ограничения текущего дизайна.
-
-
-### Нет запрета на чтение файлов
-
-Audit hook смотрит прежде всего на запись, удаление и rename. Чтение чувствительных файлов (кроме базы дыннх и чтения чужих записей в ней) отдельно не блокируется.
-
-
-### Нет запрета на злоупотребление `mx.client`
-
-Даже community-модуль получает `MXBotInterface`, а через него — `mx.client`, то есть прямой доступ к Matrix API текущего аккаунта.
-
-Это означает, что модуль может:
-
-- отправлять сообщения;
-- читать события;
-- загружать медиа;
-- трогать профиль;
-- делать другие Matrix-запросы от лица аккаунта.
-
-### Нет полной защиты от хитрых обходов
-
-Текущая модель опирается на:
-
-- `inspect.stack()`;
-- path-based определение "community caller";
-- ограниченный набор audit events.
-
-### Ограничения касаются в первую очередь community
-
-Core-модули считаются доверенной частью проекта. Если ты сам , в ручную добавишь модуль в `core`, ты работаешь уже вне модели ограничений для сторонних модулей. комьюнити модули по умолчанию ограниченные.
-
-## Практический threat model
-
-Самый честный способ описать текущую защиту:
-
-- она полезна против случайной поломки ядра;
-- она немного усложняет лобовые попытки менять core-файлы;
-- она не делает непроверенный модуль безопасным;
-- она не превращает установку `.mdl` из интернета в безрисковую операцию.
-
-Если коротко: защита здесь ближе к "guardrails", чем к "sandbox".
-
-## Практические рекомендации
-
-- Не ставь непроверенные community-модули только потому, что они "загрузились без ошибки".
-- Перед `.mdl`-установкой читай код модуля или хотя бы проверяй автора.
-- Держи внешние модули простыми: меньше сторонних сетевых интеграций, меньше фоновых задач, меньше доступа к чувствительным данным.
-- Если модуль нужен надолго, лучше форкнуть его и хранить в своем репозитории, а не тянуть raw из случайного источника.
-- Не воспринимай наличие `SekaiSecurity` как гарантию безопасного исполнения произвольного Python-кода.
+**The Golden Rule:** Only install modules from people you trust. Read the code if you're unsure. This security system is here to help, but your common sense is still the best defense.
