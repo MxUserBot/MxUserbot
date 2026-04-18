@@ -145,7 +145,7 @@
         // Procedural starfield on canvas — more stars, twinkling, drifting motion
         const canvas = document.getElementById('cosmos');
         const ctx = canvas.getContext('2d');
-        let stars = [];
+        let stars =[];
         function resizeCanvas() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
@@ -165,7 +165,7 @@
                 this.driftX = (Math.random() - 0.5) * 0.15;
                 this.driftY = (Math.random() - 0.5) * 0.1;
                 this.alpha = Math.random() * 0.6 + 0.2;
-                this.trail = [];
+                this.trail =[];
                 if (init) for (let i = 0; i < 3; i++) this.trail.push({x: this.x, y: this.y});
             }
             update() {
@@ -210,7 +210,7 @@
         animateStars();
 
         // Simple floating particles
-        const particles = [];
+        const particles =[];
         for (let i = 0; i < 30; i++) {
             particles.push({
                 x: Math.random() * canvas.width,
@@ -322,10 +322,10 @@
             setTimeout(() => {
                 const t = document.getElementById('res-title'), d = document.getElementById('res-desc'), a = document.getElementById('res-actions');
                 if(ok) {
-                    t.innerHTML = `<span data-text="${translations[currentLang].result_success}">${translations[currentLang].result_success}</span>`;
+                    t.innerHTML = `<span data-text="${translations[currentLang].result_success || 'Success'}">${translations[currentLang].result_success || 'Success'}</span>`;
                     t.classList.add('text-white');
-                    d.innerHTML = "";
-                    a.innerHTML = `<button onclick="window.open('https://docs.example.com')" class="w-full p-4 bg-gradient-to-r from-[#ff2e63] to-[#ff7eb9] text-white rounded-xl text-sm font-bold shadow-lg hover:shadow-xl transition-all">${translations[currentLang].btn_docs}</button>` +
+                    d.innerHTML = translations[currentLang].session_initialized || "Session initialized. The userbot is now active.";
+                    a.innerHTML = `<button onclick="window.location.href='panel.html'" class="w-full p-4 bg-gradient-to-r from-[#ff2e63] to-[#ff7eb9] text-white rounded-xl text-sm font-bold shadow-lg hover:shadow-xl transition-all">${translations[currentLang].btn_panel || 'Admin Panel'}</button>` +
                         `<div class="mt-8 pt-5 border-t border-[#2a3a52] flex justify-center gap-5 text-xs">` +
                         `<a href="https://matrix.to/#/#SpacePashaHatsune:matrix.org" class="text-[#ff7eb9] hover:text-white hover:underline transition-colors">space</a>` +
                         `<a href="https://github.com/MxUserBot/MxUserbot" class="text-[#ff7eb9] hover:text-white hover:underline transition-colors">github</a>` +

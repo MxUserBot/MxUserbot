@@ -1,132 +1,172 @@
 import sys
-import os
-import inspect
+import ast
+import time
 from pathlib import Path
 from functools import wraps
 from loguru import logger
+
+OWNER = 1 << 0       
+SUDO = 1 << 1        
+EVERYONE = 1 << 2    
+ALL = (1 << 3) - 1   
+DEFAULT_PERMISSIONS = OWNER
+
+def _sec(func, flags: int):
+    prev = getattr(func, "security", 0)
+    func.security = prev | OWNER | flags
+    return func
+
+def owner(func): return _sec(func, OWNER)
+def sudo(func): return _sec(func, SUDO)
+def unrestricted(func): return _sec(func, EVERYONE)
 
 class SekaiSecurity:
     def __init__(self, bot):
         self.bot = bot
         self._db = bot._db
         self.owners = set()
+        self.sudos = set()
+        self.tsec_users =[] 
 
-        self.root_path = Path(__file__).resolve().parents[2] # Корень бота
-        self.core_path = self.root_path / "mxuserbot" / "modules" / "core"
-        self.community_path = self.root_path / "mxuserbot" / "modules" / "community"
+        self.comm_marker = "/modules/community/"
+        
+        self.forbidden_api =[
+            "join", "leave", "invite", "set_displayname", 
+            "set_avatar_url", "room_put_state", "room_redact"
+        ]
+        self.forbidden_core =[
+            "login", "logout", "logout_all", "create_device_msc4190",
+            "add_dispatcher", "remove_dispatcher", "stop", "start"
+        ]
+        self.forbidden_attrs = ["crypto", "crypto_enabled", "api", "device_id"]
+        
+        self.all_forbidden = set(self.forbidden_api + self.forbidden_core + self.forbidden_attrs)
+        
+        self.forbidden_imports = {
+            "sys", "os", "subprocess", "ctypes", "importlib", 
+            "shutil", "socket", "pty", "builtins"
+        }
 
     async def init_security(self):
-        """Инициализация с гарантированным владельцем и песочницей"""
+        try:
+            resp = await self.bot.client.whoami()
+            self.owners.add(resp.user_id)
+        except: sys.exit(1)
 
-        my_id = None
-        resp = await self.bot.client.whoami()
-        if hasattr(resp, "user_id"):
-            my_id = resp.user_id
-
-        if not my_id:
-            logger.critical("CANNOT DETERMINE OWNER ID! Shutting down for security reasons.")
-            sys.exit(1)
-
-        self.owners.add(my_id)
-
-        raw_data = await self._db.get("core", "owners")
-        db_owners = raw_data.value if hasattr(raw_data, 'value') else raw_data
-
-        if isinstance(db_owners, list):
-            for owner in db_owners:
-                if owner and isinstance(owner, str):
-                    self.owners.add(owner)
-
-        await self._db.set("core", "owners", list(self.owners))
+        db_owners = await self._db.get("core", "owners",[])
+        if isinstance(db_owners, list): self.owners.update(db_owners)
+        
+        db_sudos = await self._db.get("core", "sudos",[])
+        if isinstance(db_sudos, list): self.sudos.update(db_sudos)
+        
+        self.tsec_users = await self._db.get("core", "tsec_users",[])
+        
         logger.success(f"Security active. Owners: {self.owners}")
 
-        self._enable_fs_firewall()
-
+        self._enable_firewall()
 
     def _is_community_caller(self) -> bool:
-            """Вспомогательный метод для определения, откуда идет вызов"""
-            for frame_info in inspect.stack():
-                if "modules/community" in frame_info.filename.replace("\\", "/"):
-                    return True
-            return False
+        """Проверка для Runtime-защиты (файлы, импорты)"""
+        f = sys._getframe(1) 
+        while f:
+            fn = f.f_code.co_filename.replace("\\", "/")
+            if self.comm_marker in fn:
+                return True
+            f = f.f_back
+        return False
 
-    def _enable_fs_firewall(self):
-        def fs_audit_hook(event, args):
-            try:
-                if event == "open":
-                    path, mode, flags = args
-                    if hasattr(mode, "count") and ("w" in mode or "a" in mode or "+" in mode or "x" in mode):
-                        self._check_file_access(path, "write")
-                elif event in ("os.remove", "os.unlink", "os.rmdir"):
-                    self._check_file_access(args[0], "delete")
-                elif event == "os.rename":
-                    self._check_file_access(args[0], "rename_from")
-                    self._check_file_access(args[1], "rename_to")
+    def _enable_firewall(self):
+        def core_audit_hook(event, args):
+            if event == "compile":
+                source, filename = args
+                if filename and isinstance(filename, str) and self.comm_marker in filename.replace("\\", "/"):
+                    self._audit_code(source, filename)
 
-
-                elif event == "import":
-                    module_name = args[0]
-                    if module_name and "mxuserbot.modules.core" in module_name:
-                        allowed = [
-                            "src.mxuserbot.modules.core.loader", 
-                            "src.mxuserbot.modules.core.utils",
-                            "src.mxuserbot.modules.core.types"
+            if event in ("open", "os.remove", "os.rename", "import", "ctypes.c_call"):
+                if self._is_community_caller():
+                    if event == "import" and "mxuserbot.modules.core" in args[0]:
+                        raise PermissionError(f"Security: Core import forbidden: {args[0]}")
+                    
+                    if event in ("open", "os.remove", "os.rename"):
+                        path_str = " ".join(str(a) for a in args).replace("\\", "/").lower()
+                        
+                        forbidden_paths =[
+                            "sekai.db", ".env", "config.json", 
+                            "sekai_secret", "/mxuserbot/core/", "/modules/core/"
                         ]
                         
-                        is_allowed = any(module_name == a or module_name.startswith(a + ".") for a in allowed)
-                        
-                        if not is_allowed and self._is_community_caller():
-                            logger.critical(f"[SECURITY BLOCK] Попытка импорта ядра: {module_name}")
-                            raise PermissionError(f"Security: Import of core module '{module_name}' is forbidden.")
+                        if any(restricted in path_str for restricted in forbidden_paths):
+                            logger.critical(f"[SECURITY] ⛔ Попытка доступа к системным файлам: {args[0]}")
+                            raise PermissionError("Security: STRICT BLOCK. Access to core/database files is denied.")
 
-                elif event.startswith("ctypes"):
-                    if self._is_community_caller():
-                        logger.critical("[SECURITY BLOCK] Попытка использования ctypes!")
-                        raise PermissionError("Security: C-level memory access is forbidden.")
+                        if event == "open" and len(args) > 1 and hasattr(args[1], "count") and any(m in args[1] for m in "wax+"):
+                            raise PermissionError("Security: Write access denied")
 
-            except PermissionError as e:
-                raise e
-            except Exception:
-                pass
-
-        sys.addaudithook(fs_audit_hook)
-        logger.success("Security Firewall (FS + Memory) is ACTIVE.")
-
-
-    def _check_file_access(self, target_filepath, action):
-        """Проверяет, имеет ли вызывающий код право на действие"""
-        path = Path(target_filepath).resolve()
+                    if event.startswith("ctypes"):
+                        raise PermissionError("Security: Memory access denied")
         
-        caller_file = None
-        is_community_caller = False
+        sys.addaudithook(core_audit_hook)
+        logger.success("Security System (Static Compiler + Runtime FS) ACTIVE.")
 
-        for frame_info in inspect.stack():
-            fname = frame_info.filename
-            if "modules/community" in fname.replace("\\", "/"):
-                caller_file = Path(fname)
-                is_community_caller = True
-                break
+    def _audit_code(self, source, filename):
+        """Анализирует код на наличие опасных вызовов и импортов до выполнения"""
+        if isinstance(source, bytes):
+            source_str = source.decode('utf-8', errors='ignore')
+        elif isinstance(source, str):
+            source_str = source
+        else:
+            source_str = ""
 
-        if not is_community_caller:
-            return
+        try:
+            tree = ast.parse(source)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Attribute) and node.attr in self.all_forbidden:
+                    logger.critical(f"[SECURITY] ⛔ {Path(filename).name} заблокирован! Запрещенный метод: '{node.attr}'")
+                    raise PermissionError(f"Security: Forbidden attribute '{node.attr}'")
+                
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        base_module = alias.name.split('.')[0]
+                        if base_module in self.forbidden_imports:
+                            logger.critical(f"[SECURITY] ⛔ {Path(filename).name} заблокирован! Запрещенный импорт: '{alias.name}'")
+                            raise PermissionError(f"Security: Forbidden import '{alias.name}'")
+                
+                if isinstance(node, ast.ImportFrom) and node.module:
+                    base_module = node.module.split('.')[0]
+                    if base_module in self.forbidden_imports:
+                        logger.critical(f"[SECURITY] ⛔ {Path(filename).name} заблокирован! Запрещенный импорт: '{node.module}'")
+                        raise PermissionError(f"Security: Forbidden import '{node.module}'")
 
-        if path.suffix == ".py":
-            logger.critical(f"[SECURITY BLOCK] Модуль '{caller_file.name}' попытался изменить/удалить код: {path.name}")
-            raise PermissionError(f"Security Exception: Community modules are NOT allowed to modify .py files!")
+                if isinstance(node, ast.Call):
+                    if isinstance(node.func, ast.Name) and node.func.id in {"eval", "exec", "__import__"}:
+                        logger.critical(f"[SECURITY] ⛔ {Path(filename).name} заблокирован! Использование {node.func.id}() запрещено")
+                        raise PermissionError(f"Security: {node.func.id}() is forbidden")
 
-        if self.core_path in path.parents:
-            logger.critical(f"[SECURITY BLOCK] Модуль '{caller_file.name}' попытался влезть в CORE: {path.name}")
-            raise PermissionError("Security Exception: Access denied to core system files!")
-
+        except SyntaxError as e:
+            logger.error(f"[SECURITY] Синтаксическая ошибка в {Path(filename).name}: {e}")
+            raise PermissionError("Syntax Error")
+            
+        if "getattr" in source_str:
+            for word in self.all_forbidden:
+                if f'"{word}"' in source_str or f"'{word}'" in source_str:
+                    logger.critical(f"[SECURITY] ⛔ {Path(filename).name} заблокирован! Обход через getattr('{word}')")
+                    raise PermissionError(f"Security: getattr bypass attempt for '{word}'")
 
     def is_owner(self, sender_id: str) -> bool:
         return sender_id in self.owners
 
     def gate(self, func):
         @wraps(func)
-        async def wrapper(event):
+        async def wrapper(event, *args, **kwargs):
             sender = getattr(event, "sender", None)
-            if not sender or self.is_owner(sender):
-                return await func(event)
-            return 
+            if not sender or sender in self.owners: return await func(event, *args, **kwargs)
+            cfg = getattr(func, "security", DEFAULT_PERMISSIONS)
+            if cfg & EVERYONE or (cfg & SUDO and sender in self.sudos) or self.check_tsec(sender, func.__name__):
+                return await func(event, *args, **kwargs)
+            return
         return wrapper
+
+    def check_tsec(self, sid, cmd):
+        cur = time.time()
+        self.tsec_users =[r for r in self.tsec_users if not r.get("expires") or r["expires"] > cur]
+        return any(r["target"] == sid and r["command"] == cmd for r in self.tsec_users)

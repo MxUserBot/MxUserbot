@@ -23,9 +23,29 @@ from .core import utils
 from .core.callback import CallBack
 from .core.loader import Loader
 from .core.security import SekaiSecurity
-from .core.types import BotSASVerification, InterceptHandler, Config
+from .core.types import BotSASVerification, InterceptHandler
 from ..database import Database, AsyncSessionWrapper
 
+
+from mautrix.util.async_db import Database as MautrixDatabase
+from mautrix.util.program import Program
+from mautrix.util.config import BaseFileConfig, ConfigUpdateHelper, RecursiveDict
+from ruamel.yaml.comments import CommentedMap
+class Config(BaseFileConfig):
+    """
+    Dummy config class to satisfy mautrix Program requirements.
+    We don't use file config anymore, everything is handled via database.
+    """
+    def __init__(self, path: str, base_path: str) -> None:
+        super().__init__(path, base_path)
+        self._data = RecursiveDict({"logging": {"version": 1}}, CommentedMap)
+
+    def load_base(self) -> RecursiveDict:
+        return RecursiveDict({"logging": {"version": 1}}, CommentedMap)
+
+    def load(self) -> None: pass
+    def save(self) -> None: pass
+    def do_update(self, helper: ConfigUpdateHelper) -> None: pass
 
 class MXBotInterface:
     """Безопасная обертка для передачи в модули."""
@@ -72,8 +92,9 @@ class MXBotInterface:
         return await self.client.send_message(room_id, content, **kwargs)
 
 
+
 class MXUserBot(Program):
-    """Главный класс юзербота."""
+    """Main userbot class."""
     
     def __init__(self) -> None:
         super().__init__(
@@ -85,6 +106,7 @@ class MXUserBot(Program):
             config_class=Config
         )
         self.client: Optional[Client] = None
+        self.logger = logger
         self._db: Optional[Database] = None
         self.all_modules: Optional[Loader] = None
         self.security: Optional[SekaiSecurity] = None
@@ -100,13 +122,13 @@ class MXUserBot(Program):
         self.auth_completed = asyncio.Event()
 
     async def _setup_log_room(self) -> str:
-        """Проверяет конфиг на наличие комнаты логов, создает её при необходимости."""
-        log_room_id = self.config["matrix"]["log_room_id"]
+        """Checks DB for log room, creates it if necessary."""
+        log_room_id = await self._db.get("core", "log_room_id")
 
         if log_room_id:
             return log_room_id
 
-        self.log.info("Комната логов не найдена в конфиге. Создаю новую...")
+        self.log.info("Log room not found in database. Creating a new one...")
         avatar_url = "mxc://pashahatsune.pp.ua/hGaNZRrDKOF5HlHjZ8VilRWj5QHFOXoy"
 
         initial_state =[
@@ -119,7 +141,7 @@ class MXUserBot(Program):
 
         new_room_id = await self.client.create_room(
             name="[LOGS] | MX-USERBOT",
-            topic="Техническая комната для системных уведомлений и логов",
+            topic="Technical room for system notifications and logs",
             is_direct=True,
             visibility=RoomDirectoryVisibility.PRIVATE,
             initial_state=initial_state
@@ -127,27 +149,25 @@ class MXUserBot(Program):
         
         await self.client.join_room(new_room_id)
         await self.client.set_room_tag(new_room_id, "m.favourite", {"order": 0.0})
-        await self.config.update_db_key("matrix.log_room_id", str(new_room_id))
+        
+        await self._db.set("core", "log_room_id", str(new_room_id))
 
         await utils.answer(
             self.interface, 
-            "✅ | Комната логов успешно инициализирована.", 
+            "✅ | Log room successfully initialized.", 
             room_id=new_room_id,
             edit_id=None
         )
-
-        self.config["matrix"]["log_room_id"] = str(new_room_id)
-        self.config.save()
         
-        self.log.info(f"Создана комната для логов: {new_room_id}. ID сохранен в config.yaml")
+        self.log.info(f"Created log room: {new_room_id}. ID saved to DB.")
         return str(new_room_id)
 
     async def log_to_room(self, message: str) -> None:
-        """Отправляет текстовое сообщение в комнату логов."""
-        target_room = self.config["matrix"]["log_room_id"]
+        """Sends a text message to the log room."""
+        target_room = await self._db.get("core", "log_room_id")
         
         if not target_room:
-            self.log.warning("Комната логов не настроена, пропускаю отправку.")
+            self.log.warning("Log room is not set, skipping log sending.")
             return
 
         try:
@@ -164,16 +184,16 @@ class MXUserBot(Program):
                 )
             )
         except Exception as e:
-            self.log.error(f"Ошибка отправки лога в комнату: {e}")
+            self.log.error(f"Error sending log to room: {e}")
 
     async def starts_with_command(self, body: str) -> bool:
-        """Проверяет, начинается ли сообщение с активного префикса."""
+        """Checks if the message starts with an active prefix."""
         prefixes = await self._db.get(owner="core", key="prefix")
         return body.startswith(tuple(prefixes))
 
     def should_ignore_event(self, evt: MessageEvent) -> bool:
         if evt.timestamp < (self.start_time - 10000):
-            logger.debug(f"Игнорирую старое событие: {evt.timestamp} < {self.start_time}")
+            logger.debug(f"Ignoring old event: {evt.timestamp} < {self.start_time}")
             return True
 
         if not evt.content.body:
@@ -182,11 +202,12 @@ class MXUserBot(Program):
         return False
 
     async def is_owner(self, evt: StateEvent) -> bool:
-        """Проверяет, является ли отправитель владельцем бота."""
-        return evt.sender == self.config["owner"]
+        """Checks if the sender is the bot owner."""
+        owner = await self._db.get("core", "owner")
+        return evt.sender == owner
 
     def _setup_loguru(self) -> None:
-        """Настройка форматирования и обработчиков для Loguru."""
+        """Loguru formatting and handlers setup."""
         logging.basicConfig(handlers=[InterceptHandler()], level="INFO", force=True)
         logger.remove()
         
@@ -199,20 +220,18 @@ class MXUserBot(Program):
         logger.add(sys.stdout, format=log_format, colorize=True)
 
     def prepare_log(self) -> None:
-        """Инициализация логирования (переопределение базового метода)."""
+        """Logging initialization."""
         self._setup_loguru()
         self.log = logger.bind(name=self.name)
 
     def prepare(self) -> None:
-            """Подготовка бота к запуску."""
-            super().prepare()
-            
-            self.add_startup_actions(self.run_api())
-            
-            self.add_startup_actions(self.setup_userbot())
+        """Preparing the bot for startup."""
+        super().prepare()
+        self.add_startup_actions(self.run_api())
+        self.add_startup_actions(self.setup_userbot())
 
     async def run_api(self):
-        """Запуск FastAPI сервера без конфликтов сигналов."""
+        """Launching FastAPI server without signal conflicts."""
         from .core.web.api.main import setup_routes
         from fastapi import FastAPI
         import uvicorn
@@ -240,10 +259,10 @@ class MXUserBot(Program):
                 self.log.error(f"API Server Error: {e}")
 
         asyncio.create_task(safe_serve())
-        self.log.info("🌐 API сервер запущен на http://0.0.0.0:8000")
+        self.log.info("🌐 API server running at http://0.0.0.0:8000")
 
     async def get_args(self, body: str) -> str:
-        """Извлекает аргументы команды (текст после команды)."""
+        """Extracts command arguments (text after the command)."""
         prefixes = await self._db.get(owner="core", key="prefix")
         for prefix in prefixes:
             if body.startswith(prefix):
@@ -253,7 +272,7 @@ class MXUserBot(Program):
         return ""
 
     async def _load_prefixes(self) -> None:
-        """Загрузка префиксов из БД при старте."""
+        """Loading prefixes from DB at startup."""
         db_result = await self._db.get("core", "prefix", None)
 
         if not db_result:
@@ -263,28 +282,15 @@ class MXUserBot(Program):
                 value=["."]
             )
             
-        logger.success(f"Загружены префиксы: {await self._db.get(owner='core', key='prefix')}")
+        logger.success(f"Prefixes loaded: {await self._db.get(owner='core', key='prefix')}")
 
     async def _setup_security(self) -> None:
-        """Инициализация подсистемы безопасности."""
+        """Initializing security subsystem."""
         self.security = SekaiSecurity(self)
         await self.security.init_security()
 
-    async def _cleanup_empty_rooms(self) -> None:
-        """Вспомогательный метод: выход из пустых комнат при запуске."""
-        joined_rooms = await self.client.get_joined_rooms()
-
-        for room_id in joined_rooms:
-            try:
-                members = await self.client.get_joined_members(room_id)
-                if len(members) == 1:
-                    logger.info(f"В комнате {room_id} нет других пользователей. Покидаю...")
-                    # await self.client.leave_room(room_id)
-            except Exception as e:
-                logger.error(f"Ошибка при очистке комнаты {room_id}: {e}")
-
     async def _register_handlers(self) -> None:
-        """Вспомогательный метод: регистрация обработчиков событий (Matrix)."""
+        """Registering event handlers (Matrix)."""
         cb = CallBack(self)
         
         self.client.add_event_handler(
@@ -303,7 +309,7 @@ class MXUserBot(Program):
             )
 
     async def get_prefix(self) -> str:
-        """Безопасный геттер для получения основного префикса."""
+        """Safe getter for receiving the main prefix."""
         db_result = await self._db.get("core", "prefix")
         return db_result[0]
 
@@ -322,37 +328,38 @@ class MXUserBot(Program):
                     raise e
 
             self.config.db = self._db
-            await self.config.load_from_db()
-            conf = self.config["matrix"]
+            access_token = await self._db.get("core", "access_token")
 
-            if not conf.get("access_token"):
+            if not access_token:
                 self.log.warning("⚠️ Данные авторизации не найдены!")
                 self.log.info("🌐 Откройте http://127.0.0.1:8000/docs и выполните /api/auth")
                 
                 await self.auth_completed.wait()
                 
-                await self.config.load_from_db()
-                conf = self.config["matrix"]
                 self.log.success("✅ Авторизация получена. Запускаю криптографию...")
 
             db_path = os.path.join(os.getcwd(), "sekai.db")
             self.crypto_db = MautrixDatabase.create(f"sqlite:///{db_path}")
             await self.crypto_db.start() 
+
+            base_url = await self._db.get("core", "base_url")
+            username = await self._db.get("core", "username")
+            device_id = await self._db.get("core", "device_id")
             
             await PgCryptoStore.upgrade_table.upgrade(self.crypto_db)
             await PgCryptoStateStore.upgrade_table.upgrade(self.crypto_db)
 
             self.state_store = PgCryptoStateStore(self.crypto_db)
-            self.crypto_store = PgCryptoStore(conf["username"], "sekai_secret_pickle_key", self.crypto_db)
+            self.crypto_store = PgCryptoStore(username, "sekai_secret_pickle_key", self.crypto_db)
 
             self.client = Client(
-                api=HTTPAPI(base_url=conf["base_url"]),
+                api=HTTPAPI(base_url=base_url),
                 state_store=self.state_store,
                 sync_store=self.crypto_store
             )
-            self.client.api.token = conf["access_token"]
-            self.client.mxid = conf["username"]
-            self.client.device_id = conf["device_id"]
+            self.client.api.token = access_token
+            self.client.mxid = username
+            self.client.device_id = device_id
 
             self.client.crypto = OlmMachine(self.client, self.crypto_store, self.state_store)
             self.client.crypto.allow_key_requests = True
@@ -366,11 +373,9 @@ class MXUserBot(Program):
                 try:
                     decrypted = await original_decrypt(evt)
                     if decrypted:
-                        # Проверяем тип события в расшифрованном виде
                         t = decrypted.type.t if hasattr(decrypted.type, "t") else str(decrypted.type)
                         if "m.key.verification" in t:
                             self.log.info(f"🔑 Поймано событие верификации: {t}")
-                            # Запускаем обработку в фоне
                             asyncio.create_task(self.sas_verifier.handle_decrypted_event(decrypted))
                     return decrypted
                 except Exception as e:
@@ -398,6 +403,8 @@ class MXUserBot(Program):
             
             await self.client.start(filter_data=None)
 
+
+            self.client.crypto.sign_own_device
         except Exception as e:
             self.log.exception(f"Критическая ошибка запуска: {e}")
 

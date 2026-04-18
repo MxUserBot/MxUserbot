@@ -23,7 +23,7 @@ class Meta:
     tags = ["api"]
 ```
 **Обязательно:** `name` / `_cls_doc` / `version` / `tags`
-**Необязательно:** `requirements`
+**Необязательно:** `dependencies` - зависимости. идет так: dependencies = ["pillow", "av", ...]
 
 3. Создаём основной класс:
 ```python
