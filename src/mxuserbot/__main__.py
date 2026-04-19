@@ -184,7 +184,7 @@ class MXUserBot(Program):
         log_room_id = next((res for res in found if res), None)
 
         if not log_room_id:
-            self.log.warning("Комната не найдена, создаю новую...")
+            self.log.warning("Room not found.. Create new..")
             avatar = "mxc://pashahatsune.pp.ua/hGaNZRrDKOF5HlHjZ8VilRWj5QHFOXoy"
             log_room_id = await self.client.create_room(
                 name=target_name, is_direct=True,
@@ -200,7 +200,6 @@ class MXUserBot(Program):
 
 
     async def _init_crypto(self, username: str, device_id: str):
-            """Вся еботня с криптографией здесь (логика не менялась, но исправлен порядок)."""
             db_path = os.path.join(os.getcwd(), "sekai.db")
             self.crypto_db = MautrixDatabase.create(f"sqlite:///{db_path}")
             await self.crypto_db.start()
