@@ -278,52 +278,7 @@ async def request(
                 return response
         except Exception:
             return None
-        
 
-import io
-from typing import Union, Optional
-
-from PIL import Image
-
-from mautrix.crypto.attachments import encrypt_attachment
-from mautrix.types import (
-    EventType,
-    Format,
-    ImageInfo,
-    MediaMessageEventContent,
-    MessageType,
-    ThumbnailInfo,
-)
-
-
-import io
-from typing import Union
-
-from PIL import Image
-
-from mautrix.crypto.attachments import encrypt_attachment
-from mautrix.types import (
-    EventType,
-    Format,
-    ImageInfo,
-    MediaMessageEventContent,
-    MessageType,
-    ThumbnailInfo,
-)
-import io
-from PIL import Image
-from mautrix.crypto.attachments import encrypt_attachment
-from mautrix.types import (
-    EventType, ImageInfo, MediaMessageEventContent, 
-    MessageType, ThumbnailInfo, Format, RelatesTo, RelationType
-)
-import io
-from PIL import Image
-from mautrix.crypto.attachments import encrypt_attachment
-from mautrix.types import (
-    EventType, ImageInfo, MediaMessageEventContent, 
-    MessageType, ThumbnailInfo, Format
-)
 
 async def send_image(
     mx,
@@ -333,13 +288,13 @@ async def send_image(
     file_name: str = "image.png",
     caption: str | None = None,
     info: ImageInfo | None = None,
+    html: bool = True,
     **kwargs
 ):
-    """Адекватная отправка изображений: E2EE + Thumbnail + Key Share"""
+    """Адекватная отправка изображений: E2EE + Thumbnail + Caption"""
     if not isinstance(room_id, str):
         room_id = room_id.room_id
 
-    # 1. Получаем байты (из аргументов или по ссылке)
     if not file_bytes and url:
         if url.startswith("http"):
             file_bytes = await request(url, return_type="bytes")
@@ -373,9 +328,11 @@ async def send_image(
         info=info
     )
 
+    if caption and html:
+        content.format = Format.HTML
+        content.formatted_body = caption
+
     if is_enc:
-        
-        members = await mx.client.state_store.get_members(room_id)
         await mx.client.crypto.wait_group_session_share(room_id)
 
         if thumb_bytes:
@@ -397,9 +354,13 @@ async def send_image(
             content.info.thumbnail_url = thumb_url
             content.info.thumbnail_info = ThumbnailInfo(mimetype="image/png", size=len(thumb_bytes), width=tw, height=th)
         
-        content.url = await mx.client.upload_media(file_bytes, mime_type="image/png", filename=file_name)
+        content.url = await mx.client.upload_media(file_bytes, mime_type="application/octet-stream", filename=file_name)
 
-    return await mx.client.send_message_event(room_id, EventType.ROOM_MESSAGE, content)
+    if "relates_to" in kwargs:
+        content.relates_to = kwargs.pop("relates_to")
+
+    return await mx.client.send_message_event(room_id, EventType.ROOM_MESSAGE, content, **kwargs)
+
 
 async def set_rpc_media(
     mx,
