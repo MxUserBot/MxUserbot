@@ -59,7 +59,6 @@ class MXBotInterface:
         self.version = bot.version
         
         self._get_prefix_func = bot.get_prefix
-        self._log_to_room_func = bot.log_to_room
         self._should_ignore_event_func = bot.should_ignore_event
 
     @property
@@ -82,9 +81,6 @@ class MXBotInterface:
 
     async def get_prefix(self) -> str:
         return await self._get_prefix_func()
-
-    async def log_to_room(self, message: str):
-        await self._log_to_room_func(message)
 
     def should_ignore_event(self, evt: MessageEvent) -> bool:
         return self._should_ignore_event_func(evt)
@@ -123,70 +119,88 @@ class MXUserBot(Program):
 
         self.auth_completed = asyncio.Event()
 
-    async def _setup_log_room(self) -> str:
-        """Checks DB for log room, creates it if necessary."""
-        log_room_id = await self._db.get("core", "log_room_id")
+    async def _setup_logs(self) -> str:
+            log_room_id = await self._db.get("core", "log_room_id")
+            if log_room_id:
+                self.log.info(f"ID комнаты логов взят из БД: {log_room_id}")
+                return str(log_room_id)
 
-        if log_room_id:
-            return log_room_id
+            self.log.info("В базе пусто, сука... Начинаю шуршать по твоим 70+ комнатам в поисках старых логов.")
 
-        self.log.info("Log room not found in database. Creating a new one...")
-        avatar_url = "mxc://pashahatsune.pp.ua/hGaNZRrDKOF5HlHjZ8VilRWj5QHFOXoy"
+            try:
+                joined_rooms = await self.client.get_joined_rooms()
+            except Exception as e:
+                self.log.error(f"НЕ СМОГ ПОЛУЧИТЬ СПИСОК КОМНАТ: {e}")
+                joined_rooms =[]
 
-        initial_state =[
-            {
-                "type": "m.room.avatar",
-                "state_key": "",
-                "content": {"url": avatar_url}
-            }
-        ]
+            target_name = "[LOGS] | MX-USERBOT"
+            found_id = None
 
-        new_room_id = await self.client.create_room(
-            name="[LOGS] | MX-USERBOT",
-            topic="Technical room for system notifications and logs",
-            is_direct=True,
-            visibility=RoomDirectoryVisibility.PRIVATE,
-            initial_state=initial_state
-        )
-        
-        await self.client.join_room(new_room_id)
-        await self.client.set_room_tag(new_room_id, "m.favourite", {"order": 0.0})
-        
-        await self._db.set("core", "log_room_id", str(new_room_id))
+            async def check_room_name(rid):
+                try:
+                    name_evt = await self.client.get_state_event(rid, EventType.ROOM_NAME)
+                    if name_evt and name_evt.get("name") == target_name:
+                        return rid
+                except Exception:
+                    return None
 
-        await utils.answer(
-            self.interface, 
-            "✅ | Log room successfully initialized.", 
-            room_id=new_room_id,
-            edit_id=None
-        )
-        
-        self.log.info(f"Created log room: {new_room_id}. ID saved to DB.")
-        return str(new_room_id)
+            if joined_rooms:
+                results = await asyncio.gather(*[check_room_name(rid) for rid in joined_rooms])
+                for res in results:
+                    if res:
+                        found_id = res
+                        break
 
-    async def log_to_room(self, message: str) -> None:
-        """Sends a text message to the log room."""
-        target_room = await self._db.get("core", "log_room_id")
-        
-        if not target_room:
-            self.log.warning("Log room is not set, skipping log sending.")
-            return
+            if found_id:
+                self.log.success(f"АГА, НАШЕЛ! Старая комната жива: {found_id}. Записываю в базу.")
+                await self._db.set("core", "log_room_id", str(found_id))
+                return str(found_id)
 
-        try:
-            await utils.send_image(
-                mx=self.interface, 
-                room_id=target_room,
-                url="mxc://pashahatsune.pp.ua/ZPKENBwSwKgbFvrYWByGr1140eNqWQyL",
-                caption=message,
-                file_name="photo.png",
-                info=ImageInfo(
-                    width=600,
-                    height=335,
-                    mimetype="image/png"
+            self.log.warning("Нихуя не нашел. Создаю новую комнату, деваться некуда...")
+            
+            avatar_url = "mxc://pashahatsune.pp.ua/hGaNZRrDKOF5HlHjZ8VilRWj5QHFOXoy"
+            initial_state =[
+                {
+                    "type": "m.room.avatar",
+                    "state_key": "",
+                    "content": {"url": avatar_url}
+                }
+            ]
+
+            try:
+                new_room_id = await self.client.create_room(
+                    name=target_name,
+                    topic="Technical room for system notifications and logs",
+                    is_direct=True,
+                    visibility=RoomDirectoryVisibility.PRIVATE,
+                    initial_state=initial_state
                 )
-            )
-        except Exception as e:
-            self.log.error(f"Error sending log to room: {e}")
+                
+                await self.client.join_room(new_room_id)
+                await self.client.set_room_tag(new_room_id, "m.favourite", {"order": 0.0})
+                
+                await self._db.set("core", "log_room_id", str(new_room_id))
+                
+                # Информируем пользователя
+                await utils.answer(
+                    self.interface, 
+                    "✅ | Log room successfully initialized.", 
+                    room_id=new_room_id,
+                    edit_id=None
+                )
+
+                
+                
+                self.log.info(f"Создана новая комната: {new_room_id}. ID сохранен.")
+                return str(new_room_id)
+                
+            except Exception as e:
+                self.log.critical(f"ПИЗДЕЦ! Даже комнату создать не могу: {e}")
+                raise e
+
+
+
+
 
     async def starts_with_command(self, body: str) -> bool:
         """Checks if the message starts with an active prefix."""
@@ -220,6 +234,9 @@ class MXUserBot(Program):
             "<level>{message}</level>"
         )
         logger.add(sys.stdout, format=log_format, colorize=True)
+
+
+        
 
     def prepare_log(self) -> None:
         """Logging initialization."""
@@ -402,7 +419,18 @@ class MXUserBot(Program):
                     await asyncio.sleep(5)
 
 
-            await self._setup_log_room()
+            await self._setup_logs()
+
+            from .core.log import MXLog
+            
+            self.matrix_sink = MXLog(self)
+            
+            logger.add(
+                self.matrix_sink.write, 
+                level="ERROR", 
+                format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {name}:{function}:{line} - {message}"
+            )
+            
             await self._setup_security()
             
             self.all_modules = Loader(self._db)
@@ -432,9 +460,7 @@ class MXUserBot(Program):
             try:
                 await asyncio.wait_for(sync_started.wait(), timeout=30)
                 self.log.success(f"✅ | UserBot successfully synced and running: {self.client.mxid}")
-                
-                await self.log_to_room(f"🚀 MXUserBot is online!\nUser: {self.client.mxid}")
-                
+                                
             except asyncio.TimeoutError:
                 self.log.error("❌ | Connection timeout: Server is not responding to sync.")
             
