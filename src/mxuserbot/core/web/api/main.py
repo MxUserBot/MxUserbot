@@ -25,7 +25,6 @@ class LoginSchema(BaseModel):
             raise ValueError("Format: @username:server.com")
         return v
 
-
 class ModuleInstallSchema(BaseModel):
     target: str
     is_dev: bool = False
@@ -39,14 +38,17 @@ class RepoSchema(BaseModel):
     url: str
 
 
+class PrefixSchema(BaseModel):
+    prefix: str
+
 async def auth_logic(data: LoginSchema, mx, auth_event):
     domain = data.mxid.split(":")[-1]
     base_url = f"https://{domain}"
-    
+
     db_path = os.path.join(os.getcwd(), "sekai.db")
     crypto_db = MautrixDatabase.create(f"sqlite:///{db_path}")
     await crypto_db.start()
-    
+
     await PgCryptoStore.upgrade_table.upgrade(crypto_db)
     await PgCryptoStateStore.upgrade_table.upgrade(crypto_db)
 
@@ -63,7 +65,7 @@ async def auth_logic(data: LoginSchema, mx, auth_event):
         resp = await temp_client.login(
             identifier=data.mxid,
             password=data.password,
-            initial_device_display_name="Sekai Userbot" 
+            initial_device_display_name="Sekai Userbot"
         )
 
         temp_client.mxid = data.mxid
@@ -73,11 +75,11 @@ async def auth_logic(data: LoginSchema, mx, auth_event):
         temp_client.crypto = OlmMachine(temp_client, crypto_store, state_store)
         temp_client.crypto.allow_key_requests = True
         await temp_client.crypto.load()
-        
+
         if not await crypto_store.get_device_id():
             await crypto_store.put_device_id(resp.device_id)
-        
-        await temp_client.crypto.share_keys() 
+
+        await temp_client.crypto.share_keys()
         await crypto_store.put_account(temp_client.crypto.account)
 
         await mx._db.set("core", "base_url", base_url)
@@ -91,7 +93,7 @@ async def auth_logic(data: LoginSchema, mx, auth_event):
         await crypto_db.stop()
 
         auth_event.set()
-        
+
         return {"status": "success", "message": "Auth successful."}
 
     except Exception as e:
@@ -112,9 +114,21 @@ def setup_routes(app: FastAPI, mx, auth_event):
             data = json.load(file)
         return data
 
+    @app.get("/panel", response_class=HTMLResponse)
+    async def get_panel_page():
+        access_token = await mx._db.get("core", "access_token")
+        if not access_token:
+            return RedirectResponse(url="/", status_code=302)
+
+        html_path = os.path.join(os.getcwd(), "src/mxuserbot/core/web/panel.html")
+        try:
+            with open(html_path, "r", encoding="utf-8") as f:
+                return HTMLResponse(content=f.read())
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="File panel.html not found.")
+
     @app.get("/", response_class=HTMLResponse)
     async def get_login_page(lang: str = "en"):
-        # Проверка авторизации
         if await mx._db.get("core", "access_token"):
             return RedirectResponse(url="/panel")
 
@@ -122,11 +136,10 @@ def setup_routes(app: FastAPI, mx, auth_event):
         locale_path = os.path.join(os.path.dirname(__file__), "locale.json")
         with open(locale_path, 'r', encoding='utf-8') as f:
             locale = json.load(f)
-        
-        # Загрузка HTML
+
         base = os.path.dirname(os.path.dirname(__file__))
         html_path = os.path.join(base, "index.html")
-        
+
         try:
             with open(html_path, "r", encoding="utf-8") as f:
                 html = f.read()
@@ -136,14 +149,28 @@ def setup_routes(app: FastAPI, mx, auth_event):
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="File index.html not found.")
 
-    @app.get("/panel", response_class=HTMLResponse)
-    async def get_panel_page():
-        html_path = os.path.join(os.getcwd(), "src/mxuserbot/core/web/panel.html")
-        try:
-            with open(html_path, "r", encoding="utf-8") as f:
-                return HTMLResponse(content=f.read())
-        except FileNotFoundError:
-            raise HTTPException(status_code=404, detail="File panel.html not found.")
+    @app.get("/api/config/prefix")
+    async def get_current_prefix():
+        prefix_list = await mx._db.get("core", "prefix")
+        current = prefix_list[0] if isinstance(prefix_list, list) and prefix_list else "."
+        return {"status": "success", "prefix": current}
+
+    @app.post("/api/config/prefix")
+    async def change_prefix(data: PrefixSchema = Body(...)):
+        new_prefix = data.prefix.strip()
+        if len(new_prefix) != 1:
+            raise HTTPException(status_code=400, detail="Prefix must be exactly one character.")
+
+        allowed = "!\"./\\,;:@#$%^&*-_+=?|~"
+        if new_prefix not in allowed:
+            raise HTTPException(status_code=400, detail=f"Character {new_prefix} is not allowed.")
+
+        await mx._db.set("core", "prefix", [new_prefix])
+
+        if hasattr(mx, "prefixes"):
+            mx.prefixes = [new_prefix]
+
+        return {"status": "success", "message": f"Prefix changed to {new_prefix}"}
 
     @app.get("/api/modules/search")
     async def search_modules(query: str):
@@ -165,7 +192,7 @@ def setup_routes(app: FastAPI, mx, auth_event):
             raise HTTPException(status_code=404, detail=f"Module {data.target} not found.")
         if needs_dev_warning and not data.is_dev:
             raise HTTPException(
-                status_code=403, 
+                status_code=403,
                 detail="Confirmation is required for direct link installation (is_dev=True)."
             )
         try:
