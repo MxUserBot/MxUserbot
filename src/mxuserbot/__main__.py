@@ -290,13 +290,16 @@ class MXUserBot(Program):
                     await self.client.whoami()
                     break
                 except (MatrixConnectionError, OSError):
-                    self.log.error("🌐 Сеть недоступна, ретрай через 5 сек...")
+                    self.log.error("🌐 | Network unavailable, retrace in 5 seconds...")
                     await asyncio.sleep(5)
 
             await self._setup_logs()
             from .core.log import MXLog
             self.matrix_sink = MXLog(self)
-            logger.add(self.matrix_sink.write, level="WARNING")
+            logger.add(
+                self.matrix_sink.write,
+                level="WARNING"
+            )
             
             await self._setup_security()
             
@@ -326,9 +329,9 @@ class MXUserBot(Program):
 
             try:
                 await asyncio.wait_for(sync_started.wait(), timeout=30)
-                self.log.success(f"🚀 Юзербот запущен: {self.client.mxid}")
+                self.log.success(f"🚀 | Userbot Started: {self.client.mxid}")
             except asyncio.TimeoutError:
-                self.log.error("❌ Таймаут: сервер не отвечает на синхронизацию.")
+                self.log.error("❌ | Server timeout")
 
         except Exception as e:
             self.log.exception(f"КРИТИЧЕСКАЯ ОШИБКА: {e}")
