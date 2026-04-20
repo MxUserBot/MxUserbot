@@ -1,43 +1,37 @@
-from ast import List
-import asyncio
-import contextvars
-import logging
 import os
 import sys
 import time
+import logging
+import asyncio
 import traceback
+import contextvars
+from ast import List
 from typing import Optional, Dict, Any
 
 from loguru import logger
 from mautrix.api import HTTPAPI
 from mautrix.client import Client
 from mautrix.crypto import OlmMachine
-from mautrix.crypto.store.asyncpg import PgCryptoStore, PgCryptoStateStore
-from mautrix.types import (
-    MessageEvent, EventType, StateEvent, RoomDirectoryVisibility, 
-    ImageInfo
-)
-from mautrix.util.async_db import Database as MautrixDatabase
 from mautrix.util.program import Program
+from mautrix.client import InternalEventType
+from ruamel.yaml.comments import CommentedMap
+from mautrix.errors import MatrixConnectionError
+from mautrix.types import MessageEvent, EventType
+from mautrix.util.async_db import Database as MautrixDatabase
+from mautrix.crypto.store.asyncpg import PgCryptoStore, PgCryptoStateStore
+from mautrix.util.config import BaseFileConfig, ConfigUpdateHelper, RecursiveDict
 
 from .core import utils
-from .core.callback import CallBack
 from .core.loader import Loader
+from .core.callback import CallBack
 from .core.security import SekaiSecurity
 from .core.types import BotSASVerification, InterceptHandler
 from ..database import Database, AsyncSessionWrapper
 
 
-from mautrix.util.async_db import Database as MautrixDatabase
-from mautrix.util.program import Program
-from mautrix.util.config import BaseFileConfig, ConfigUpdateHelper, RecursiveDict
-from ruamel.yaml.comments import CommentedMap
-
-from mautrix.errors import MatrixConnectionError
 class Config(BaseFileConfig):
     """
-    Dummy config class to satisfy mautrix Program requirements.
-    We don't use file config anymore, everything is handled via database.
+    A placeholder so class Program doesn't complain
     """
     def __init__(self, path: str, base_path: str) -> None:
         super().__init__(path, base_path)
@@ -50,10 +44,10 @@ class Config(BaseFileConfig):
     def save(self) -> None: pass
     def do_update(self, helper: ConfigUpdateHelper) -> None: pass
 
+
 class MXBotInterface:
-    """Безопасная обертка для передачи в модули."""
+    """A secure wrapper to be passed to modules."""
     
-    _current_event = contextvars.ContextVar("current_event")
 
     def __init__(self, bot: 'MXUserBot'):
         self._bot = bot
@@ -62,35 +56,28 @@ class MXBotInterface:
         self._get_prefix_func = bot.get_prefix
         self._should_ignore_event_func = bot.should_ignore_event
 
+
     @property
     def client(self) -> Client:
         return self._bot.client
+
 
     @property
     def sas_verifier(self) -> BotSASVerification:
         return self._bot.sas_verifier
 
+
     @property
     def active_modules(self) -> dict:
         return self._bot.active_modules
 
-    def is_owner(self, sender_id: str) -> bool:
-        """Динамически проверяет владельца через подсистему безопасности."""
-        if self._bot.security:
-            return self._bot.security.is_owner(sender_id)
-        return False
 
     async def get_prefix(self) -> str:
         return await self._get_prefix_func()
 
+
     def should_ignore_event(self, evt: MessageEvent) -> bool:
         return self._should_ignore_event_func(evt)
-
-    async def send_message(self, room_id, content, **kwargs):
-        """Проксирует отправку сырого контента в реальный клиент."""
-        return await self.client.send_message(room_id, content, **kwargs)
-
-from mautrix.client import InternalEventType
 
 
 class MXUserBot(Program):
@@ -102,9 +89,10 @@ class MXUserBot(Program):
             name='MXUserBot',
             description="MXUserbot - matrix userbot.",
             command="-",
-            version="1.8 | BETA",
+            version="2.0 | BETA",
             config_class=Config
         )
+
         self.client: Optional[Client] = None
         self._db: Optional[Database] = None
         self.all_modules: Optional[Loader] = None
@@ -118,32 +106,35 @@ class MXUserBot(Program):
         self._prefixes: List[str] = ["."]
 
 
-    async def _get_core_conf(self, key: str, default: Any = None) -> Any:
-        """Быстрый доступ к конфигу ядра в БД."""
+    async def _get_core_conf(
+        self,
+        key: str,
+        default: Any = None
+    ) -> Any:
         return await self._db.get("core", key, default)
 
 
-    async def get_prefix(self) -> str:
-        """Возвращает основной префикс."""
+    async def get_prefix(
+        self
+    ) -> str:
         return self._prefixes[0] if self._prefixes else "."
 
 
-    async def is_owner(self, evt: Any) -> bool:
-        """Проверка на владельца."""
-        owner_id = await self._get_core_conf("owner")
-        return evt.sender == owner_id
-
-
-    def should_ignore_event(self, evt: MessageEvent) -> bool:
-        """Фильтрация старого говна и пустых сообщений."""
+    def should_ignore_event(
+        self,
+        evt: MessageEvent
+    ) -> bool:
         if not evt.content.body:
             return True
         return evt.timestamp < (self.start_time - 10000)
 
 
-    def _setup_loguru(self) -> None:
-        """Настройка красивого логгера."""
-        logging.basicConfig(handlers=[InterceptHandler()], level="INFO", force=True)
+    def _setup_loguru(
+        self
+    ) -> None:
+        logging.basicConfig(
+            handlers=[InterceptHandler()], level="INFO", force=True
+        )
         logger.remove()
         log_format = (
             "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
@@ -155,19 +146,16 @@ class MXUserBot(Program):
 
 
     async def _init_database(self) -> None:
-        """Инициализация основной БД."""
         session_wrapper = AsyncSessionWrapper()
         self._db = Database(session_wrapper)
         try:
             await self._db._sw.init_db()
         except Exception as e:
-            if "already exists" not in str(e).lower():
-                raise e
+            raise e
         self.config.db = self._db
 
 
     async def _setup_logs(self) -> str:
-        """Поиск или создание комнаты логов. Без дубликатов."""
         log_room_id = await self._get_core_conf("log_room_id")
         if log_room_id:
             return str(log_room_id)
@@ -200,7 +188,11 @@ class MXUserBot(Program):
         return str(log_room_id)
 
 
-    async def _init_crypto(self, username: str, device_id: str):
+    async def _init_crypto(
+        self,
+        username: str,
+        device_id: str
+    ):
             db_path = os.path.join(os.getcwd(), "sekai.db")
             self.crypto_db = MautrixDatabase.create(f"sqlite:///{db_path}")
             await self.crypto_db.start()
@@ -219,6 +211,7 @@ class MXUserBot(Program):
             await self.client.crypto.load()
 
             orig_decrypt = self.client.crypto._decrypt_olm_event
+
             async def hooked_decrypt(evt):
                 dec = await orig_decrypt(evt)
                 if dec and "m.key.verification" in (dec.type.t if hasattr(dec.type, "t") else str(dec.type)):
@@ -232,12 +225,14 @@ class MXUserBot(Program):
                 await self.client.crypto.share_keys()
 
 
-    async def starts_with_command(self, body: str) -> bool:
+    async def starts_with_command(
+        self,
+        body: str
+    ) -> bool:
         return body.startswith(tuple(self._prefixes))
 
 
     async def _setup_security(self) -> None:
-        """Initializing security subsystem."""
         self.security = SekaiSecurity(self)
         await self.security.init_security()
 
@@ -253,7 +248,6 @@ class MXUserBot(Program):
 
 
     async def run_api(self):
-        """Запуск FastAPI без лишнего шума."""
         from .core.web.api.main import setup_routes
         from fastapi import FastAPI
         import uvicorn
@@ -266,7 +260,9 @@ class MXUserBot(Program):
         self.log.info(f"🌐 | API running: http://{server.config.host}:{server.config.port}")
 
 
-    async def setup_userbot(self) -> None:
+    async def setup_userbot(
+        self
+    ) -> None:
         try:
             await self._init_database()
             
@@ -308,10 +304,21 @@ class MXUserBot(Program):
             await self.all_modules.register_all(self.interface)
             self.active_modules = self.all_modules.active_modules
             
-            self._prefixes = await self._get_core_conf("prefix", ["."])
+            self._prefixes = await self._get_core_conf("prefix")
+            if not self._prefixes:
+                await self._db.set(
+                    owner="core",
+                    key="prefix",
+                    value=["."]
+                )
+
             cb = CallBack(self)
             self.client.add_event_handler(EventType.ROOM_MEMBER, self.security.gate(cb.invite_cb))
             self.client.add_event_handler(EventType.ROOM_MEMBER, cb.memberevent_cb)
+
+            self.client.add_event_handler(EventType.REACTION, lambda e: cb._dispatch_event(EventType.REACTION, e))
+            self.client.add_event_handler(EventType.ROOM_REDACTION, lambda e: cb._dispatch_event(EventType.ROOM_REDACTION, e))
+            self.client.add_event_handler(EventType.ROOM_TOMBSTONE, lambda e: cb._dispatch_event(EventType.ROOM_TOMBSTONE, e))
             if hasattr(cb, "message_cb"):
                 self.client.add_event_handler(EventType.ROOM_MESSAGE, cb.message_cb)
 
@@ -330,13 +337,12 @@ class MXUserBot(Program):
 
             try:
                 await asyncio.wait_for(sync_started.wait(), timeout=30)
-                self.log.success(f"🚀 | Userbot Started: {self.client.mxid}")
+                self.log.success(f"Userbot Started: {self.client.mxid}")
             except asyncio.TimeoutError:
-                self.log.error("❌ | Server timeout")
+                self.log.error("Server timeout")
 
         except Exception as e:
-            self.log.exception(f"КРИТИЧЕСКАЯ ОШИБКА: {e}")
-            sys.exit(1)
+            raise e
 
 
 if __name__ == "__main__":
