@@ -252,7 +252,7 @@ async def answer(
             edit_id = None
 
     if not room_id:
-        mx.logger.error("utils.answer() called without room_id and context!")
+        logger.error("utils.answer() called without room_id and context!")
         return ""
 
     plain_text = await parse_html(text) if html else text

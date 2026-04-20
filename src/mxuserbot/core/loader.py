@@ -1,42 +1,71 @@
-import os
+import re
 import sys
 import typing
-import shutil
 import inspect
 import hashlib
 import asyncio
 import importlib.util
-from functools import wraps
 from pathlib import Path
+from functools import wraps
+from typing import Annotated
+
 from loguru import logger
+from mautrix.types import EventType
 
 from . import utils
-from .types import Module, ConfigValue
-
+from .security import ScopedDatabase
+from .types import Module, ConfigValue # для удобства импорта
 from .security import SUDO, OWNER, EVERYONE
 
+
+_MODULE_NAME_BY_HASH: typing.Dict[str, str] = {}
 
 SUDO = SUDO
 OWNER = OWNER
 EVERYONE = EVERYONE
 
 
-def command(name=None, security=SUDO):
+def on(
+    event_type: EventType
+):
     def decorator(func):
-        func.is_command = True
-        func.command_name = (name or func.__name__).lower()
+        func.is_event_handler = True
+        func.handled_event_type = event_type
+        return func
+    return decorator
+
+
+def watcher(
+    regex: str,
+    security=EVERYONE
+):
+    def decorator(func):
+        func.is_watcher = True
+        func.regex = re.compile(regex, re.IGNORECASE)
         func.security = security
         return func
     return decorator
 
-_MODULE_NAME_BY_HASH: typing.Dict[str, str] = {}
+
+def command(
+    name=None,
+    aliases: list = None,
+    security=SUDO
+):
+    def decorator(func):
+        func.is_command = True
+        func.command_name = (name or func.__name__).lower()
+        func.aliases = [a.lower() for a in (aliases or [])]
+        func.security = security
+        return func
+    return decorator
+
 
 def _calc_module_hash(source: str) -> str:
     return hashlib.sha256(source.encode("utf-8", errors="ignore")).hexdigest()
 
 
 def tds(cls):
-    """Decorator that makes triple-quote docstrings translatable for commands"""
     if not hasattr(cls, 'strings'):
         cls.strings = {}
 
@@ -73,22 +102,7 @@ def tds(cls):
         if cmd_doc:
             cls.strings.setdefault(f"_cmd_doc_{command_}", inspect.cleandoc(cmd_doc))
 
-
     return cls
-
-
-
-class ScopedDatabase:
-    """Обертка над БД, которая жестко привязывает запросы к имени модуля."""
-    def __init__(self, raw_db, module_name: str):
-        self._raw_db = raw_db
-        self._module_name = module_name
-
-    async def get(self, key: str, default=None):
-        return await self._raw_db.get(self._module_name, key, default)
-
-    async def set(self, key: str, value):
-        return await self._raw_db.set(self._module_name, key, value)
 
 
 class Loader:
@@ -101,8 +115,11 @@ class Loader:
 
         self._background_tasks: typing.Set[asyncio.Task] = set()
 
-    async def register_all(self, bot) -> None:
-        """Сканирует core и community папки. Core модули загружаются первыми для защиты имен."""
+
+    async def register_all(
+        self,
+        bot
+    ) -> None:
         for p in [self.core_path, self.community_path]:
             p.mkdir(parents=True, exist_ok=True)
 
@@ -115,11 +132,15 @@ class Loader:
         for path in community_files:
             await self.register_module(path, bot, is_core=False)
 
-        logger.info(f"Загружено модулей: {len(self.active_modules)}.")
+        logger.info(f"Load modules: {len(self.active_modules)}.")
 
 
-    async def register_module(self, path: Path, bot, is_core: bool = False):
-        """Импорт модуля с учетом вложенности (core/community) и проверкой Meta"""
+    async def register_module(
+        self,
+        path: Path,
+        bot,
+        is_core: bool = False
+    ):
         subfolder = "core" if is_core else "community"
         module_name = f"src.mxuserbot.modules.{subfolder}.{path.stem}"
         
@@ -138,16 +159,16 @@ class Loader:
                 return
 
             if not hasattr(module, 'Meta'):
-                logger.info(f"[{path.stem}] Отсутствует класс Meta. Модуль не будет загружен.")
+                logger.info(f"[{path.stem}] class Meta not found in module. Module not load.")
                 return
 
             module_meta = module.Meta
 
-            required_meta_vars = ["name", "_cls_doc"]
+            required_meta_vars = ["name", "_cls_doc", "tags", "version"]
             for req in required_meta_vars:
                 val = getattr(module_meta, req, None)
                 if not val or not str(val).strip():
-                    logger.error(f"[{path.stem}] В классе Meta отсутствует или пуста переменная '{req}'. Модуль не стартанет.")
+                    logger.error(f"[{path.stem}] Meta class is missing the required '{req}' attribute or it is empty. Module startup failed.")
                     return
 
             cls = None
@@ -159,33 +180,30 @@ class Loader:
                         break
 
             if not cls:
-                logger.warning(f"[{path.stem}] Класс с именем '*Module' не найден. Файл пропущен.")
+                logger.warning(f"[{path.stem}] Class named '*Module' not found. Module skipped.")
                 return
 
             short_name = path.stem
 
             if not is_core:
                 if short_name in self.active_modules:
-                    logger.warning(f"[COMM] Отмена: файл '{short_name}.py' дублирует Core-модуль.")
                     return
                 
                 for loaded_mod in self.active_modules.values():
                     if loaded_mod.__class__.__name__ == cls.__name__:
-                        logger.warning(f"[COMM] Отмена: Класс '{cls.__name__}' уже используется Core-модулем")
+                        logger.warning(f"[COMM] | class '{cls.__name__}' is used core-module")
                         return
                     if loaded_mod.Meta.name == module_meta.name:
-                        logger.warning(f"[COMM] Отмена: Имя Meta.name '{module_meta.name}' уже используется Core-модулем.")
+                        logger.warning(f"[COMM] | class '{module_meta.name}' is used core-module")
                         return
 
             cls.Meta = module_meta
-
 
             if is_core:
                 def secure_setattr(obj, name, value):
                     for frame_info in inspect.stack():
                         if "modules/community" in frame_info.filename.replace("\\", "/"):
-                            logger.critical(f"[SECURITY BLOCK] Модуль из community пытался подменить память в Core: {name}")
-                            raise PermissionError("Security: Core modules are frozen in memory and cannot be modified!")
+                            raise PermissionError(" Core modules are frozen in memory and cannot be modified!")
                     object.__setattr__(obj, name, value)
                 
                 cls.__setattr__ = secure_setattr
@@ -205,10 +223,18 @@ class Loader:
                 await instance._internal_init(short_name, db_to_pass, loader_to_pass, is_core=is_core)
 
             if hasattr(instance, "commands"):
-                for cmd_name, func in instance.commands.items():
-                    # func — это bound method. Берем реальную функцию через __func__!
-                    func.__func__.module_class_name = cls.__name__
-            # ----------------------------------------------
+                instance._event_handlers = {} # {EventType: [funcs]}
+                instance._watchers = []
+                
+                for attr_name in dir(instance):
+                    attr = getattr(instance, attr_name)
+                    
+                    if getattr(attr, "is_event_handler", False):
+                        etype = attr.handled_event_type
+                        instance._event_handlers.setdefault(etype, []).append(attr)
+                    
+                    if getattr(attr, "is_watcher", False):
+                        instance._watchers.append(attr)
 
             self._apply_metadata(instance, spec)
             
@@ -218,15 +244,16 @@ class Loader:
             self._background_tasks.add(startup_task)
             startup_task.add_done_callback(self._background_tasks.discard)
 
-            type_str = "CORE" if is_core else "COMM"
-            logger.debug(f"[{type_str}] Импортирован модуль: {short_name} (Класс: {cls.__name__})")
-
         except Exception:
-            logger.exception(f"Ошибка при импорте модуля {path.name}")
+            logger.exception(f"Error module import {path.name}")
 
-    async def unload_module(self, name: str, bot) -> bool:
+
+    async def unload_module(
+        self,
+        name: str,
+        bot
+    ) -> bool:
         if name not in self.active_modules:
-            logger.warning(f"Модуль {name} не найден среди активных.")
             return False
 
         instance = self.active_modules[name]
@@ -237,8 +264,8 @@ class Loader:
                     await instance._matrix_stop(bot)
                 else:
                     instance._matrix_stop(bot)
-        except Exception:
-            logger.exception(f"Ошибка при вызове _matrix_stop у модуля {name}")
+        except Exception as e:
+            raise e
 
         module_name_to_del = None
         for mod_name in list(sys.modules.keys()):
@@ -250,11 +277,16 @@ class Loader:
             del sys.modules[module_name_to_del]
 
         del self.active_modules[name]
-        logger.success(f"Модуль {name} успешно выгружен.")
+        logger.success(f"Module {name} success unloaded!")
         return True
 
-    async def _finalize_module_startup(self, instance, bot, name):
-        """Фоновый метод: загрузка настроек и запуск _matrix_start"""
+
+    async def _finalize_module_startup(
+        self,
+        instance,
+        bot,
+        name
+    ):
         try:
             if hasattr(instance, "set_settings"):
                 saved_settings = await self._db.get(name, "__config__")
@@ -267,11 +299,14 @@ class Loader:
             instance._is_ready = True
             
             logger.success(f"Module {name} is started!")
-        except Exception:
-            logger.exception(f"Ошибка при запуске модуля {name}")
+        except Exception as e:
+            raise e
 
-    def _apply_metadata(self, instance, spec):
-        """Запись метаданных (исходник, хэш)"""
+    def _apply_metadata(
+        self,
+        instance,
+        spec
+    ) -> None:
         try:
             with open(spec.origin, 'r', encoding='utf-8') as f:
                 source = f.read()

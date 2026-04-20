@@ -6,6 +6,7 @@ import json
 import logging
 import sys
 import time
+import typing
 import uuid
 from abc import ABC
 from typing import Any, AsyncGenerator, Dict, Optional, Callable
@@ -94,6 +95,23 @@ class ModuleConfig:
 
     def get_description(self, key):
         return self._schema[key].description if key in self._schema else ""
+    
+    def get_missing_required(self) -> typing.Optional[str]:
+        """
+        Проверяет все ключи, помеченные как required.
+        Возвращает имя первого пропущенного ключа или None.
+        """
+        for key, cfg in self._schema.items():
+            if cfg.required:
+                val = self._cache.get(key)
+                # Считаем пустым, если: None, строка "NONE", или просто пустая строка
+                if val is None or val == "NONE" or (isinstance(val, str) and not val.strip()):
+                    return key
+        return None
+
+    def get_description(self, key: str) -> str:
+        """Безопасно достает описание ключа"""
+        return self._schema[key].description if key in self._schema else "No description"
 
 
 class ConfigValue:
@@ -101,11 +119,13 @@ class ConfigValue:
         self,
         default: Any,
         description: str = "",
-        validator: Optional[Callable[[Any], bool]] = None
+        validator: Optional[Callable[[Any], bool]] = None,
+        required: bool = False
     ):
         self.default = default
         self.description = description
         self.validator = validator
+        self.required = required
         self.type = type(default)
 
     def _convert(self, val: Any) -> Any:
