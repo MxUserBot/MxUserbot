@@ -122,8 +122,13 @@ class CallBack:
                         
                     func = mod.commands[cmd_name]
                     try:
-                        if not self.mx.interface.is_owner(evt.sender):
+                        if not await self.mx.security.check_access(
+                            evt.sender,
+                            func,
+                            cmd_name
+                        ):
                             return
+
                         
                         token = self.mx.interface._current_event.set(evt)
                         try:
