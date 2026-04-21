@@ -7,7 +7,6 @@ import asyncio
 import importlib.util
 from pathlib import Path
 from functools import wraps
-from typing import Annotated
 
 from loguru import logger
 from mautrix.types import EventType
