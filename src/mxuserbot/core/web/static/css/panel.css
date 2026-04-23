@@ -1,0 +1,7 @@
+body { font-family: 'Inter', sans-serif; }
+.view-fade-enter-active { animation: fade 0.2s ease-out; }
+.modal-fade-enter-active { animation: modalFade 0.2s ease-out; }
+@keyframes fade { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes modalFade { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-thumb { background: #2d2d35; border-radius: 4px; }

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>MXUserbot Panel</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/panel.css">
+</head>
+<body class="bg-[#09090b] text-[#e4e4e7] min-h-screen flex items-center justify-center p-4">
+
+    {% raw %}
+    <div id="app" class="w-full max-w-[700px] bg-[#18181b] border border-[#27272a] rounded-xl p-6 shadow-2xl relative">
+        
+        <div class="flex justify-between items-center mb-6 border-b border-[#27272a] pb-4">
+            <h1 class="text-lg font-semibold text-white flex items-center gap-2">
+                MXUserbot <span class="h-2 w-2 rounded-full bg-emerald-600" :class="{'animate-pulse': !loading}"></span>
+            </h1>
+            <nav class="flex gap-1 bg-[#09090b] p-1 rounded-md border border-[#27272a]">
+                <button @click="view = 'mods'" :class="btnClass(view === 'mods')">Modules</button>
+                <button @click="view = 'set'" :class="btnClass(view === 'set')">Settings</button>
+            </nav>
+        </div>
+
+        <div v-if="view === 'mods'" class="view-fade space-y-4">
+            <div class="flex gap-4 border-b border-[#27272a] pb-2">
+                <button @click="modTab = 'installed'" :class="tabClass(modTab === 'installed')">Installed</button>
+                <button @click="modTab = 'search'" :class="tabClass(modTab === 'search')">Market</button>
+            </div>
+
+            <div v-if="modTab === 'search'" class="flex gap-2">
+                <input v-model="searchQuery" @keyup.enter="searchModules" placeholder="Search..." class="w-full p-2 bg-[#09090b] border border-[#27272a] rounded-md text-sm outline-none focus:border-emerald-900 transition-colors">
+                <button @click="searchModules" class="px-4 bg-emerald-900/80 text-emerald-100 border border-emerald-800/50 rounded-md text-xs font-semibold hover:bg-emerald-800 transition-colors">Search</button>
+            </div>
+
+            <div class="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+                <div v-if="loading" class="text-center py-8 text-[#a1a1aa] text-sm">Syncing...</div>
+                <div v-else-if="currentModList.length === 0" class="text-center py-8 text-[#a1a1aa] text-sm">Empty.</div>
+                
+                <div v-for="mod in currentModList" :key="mod.id" class="flex justify-between items-start p-3 border border-[#27272a] rounded-md bg-[#09090b]/30 hover:bg-[#09090b]/60 transition-colors">
+                    <div class="truncate pr-3 w-full">
+                        <div class="flex items-center gap-2 mb-1 flex-wrap">
+                            <h3 class="text-sm font-medium text-[#f4f4f5]">{{ mod.name }}</h3>
+                            <span v-if="mod.is_core" class="text-[10px] bg-emerald-950/30 text-emerald-500/70 px-1.5 py-0.5 rounded font-medium uppercase tracking-wider border border-emerald-900/30">System</span>
+                            <span v-for="tag in mod.tags" :key="tag" class="text-[10px] bg-[#27272a]/50 text-[#a1a1aa] px-1.5 py-0.5 rounded font-mono">{{ tag }}</span>
+                        </div>
+                        <p class="text-xs text-[#a1a1aa] whitespace-normal line-clamp-2">{{ mod.description }}</p>
+                        
+                        <div v-if="modTab === 'search'" class="text-[10px] mt-2 flex items-center gap-2">
+                            <span v-if="mod.is_verified" class="text-emerald-600/80">✓ Verified</span>
+                            <span v-else class="text-amber-700/80">Community</span>
+                            <a v-if="mod.author && mod.author !== 'Unknown'" :href="mod.author" target="_blank" class="text-[#52525b] hover:text-emerald-500 underline decoration-dashed transition-colors">Author</a>
+                        </div>
+                    </div>
+                    
+                    <div class="flex-shrink-0 flex flex-col items-end gap-2 mt-0.5">
+                        <div class="flex items-center gap-1.5 h-[28px]">
+                            <!-- ТЕПЕРЬ ТВОЯ КНОПКА ТАКАЯ ЖЕ ПУСТАЯ, КАК ТВОИ ОБЕЩАНИЯ ПРИЙТИ ВОВРЕМЯ -->
+                            <button v-if="mod.is_installed && mod.has_config" @click="openConfig(mod)" 
+                                    class="flex items-center justify-center w-[28px] h-[28px] rounded border border-[#27272a] bg-transparent hover:bg-[#27272a] transition-colors group" title="Settings">
+                                <img src="/assets/settings.svg" class="w-4 h-4 opacity-40 group-hover:opacity-100 transition-opacity" style="filter: invert(100%);"> 
+                            </button>
+                            
+                            <button v-if="mod.is_core" disabled class="px-3 h-full rounded text-[10px] font-semibold min-w-[90px] bg-[#1a1a1e] text-[#424248] border border-[#27272a] uppercase">Protected</button>
+                            
+                            <button v-else @click="toggleModule(mod)" :disabled="processing === mod.id" 
+                                    :class="errors[mod.id] ? 'border border-rose-950 text-rose-500 bg-rose-950/20' : (mod.is_installed ? 'border border-rose-900/20 text-rose-400/80 hover:bg-rose-950/20' : 'bg-emerald-900/80 text-emerald-100 border border-emerald-800/50 hover:bg-emerald-800')" 
+                                    class="px-3 h-full rounded text-[11px] font-semibold min-w-[90px] transition-all disabled:opacity-50">
+                                <span v-if="processing === mod.id">...</span>
+                                <span v-else-if="errors[mod.id]">{{ errors[mod.id] }}</span>
+                                <span v-else>{{ mod.is_installed ? 'Remove' : 'Install' }}</span>
+                            </button>
+                        </div>
+                        <a v-if="mod.raw_url" :href="mod.raw_url" target="_blank" class="text-[10px] text-[#52525b] hover:text-[#a1a1aa] underline decoration-dashed mr-1 transition-colors">Source</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="view === 'set'" class="view-fade space-y-6">
+            <div>
+                <h2 class="text-sm font-semibold text-[#a1a1aa] mb-3">System</h2>
+                <div class="grid grid-cols-3 gap-3">
+                    <div class="bg-[#09090b] border border-[#27272a] rounded p-3 text-center">
+                        <p class="text-[#52525b] text-[10px] uppercase font-semibold mb-1">Status</p>
+                        <p class="text-emerald-600/80 text-sm font-medium">ONLINE</p>
+                    </div>
+                    <div class="bg-[#09090b] border border-[#27272a] rounded p-3 text-center">
+                        <p class="text-[#52525b] text-[10px] uppercase font-semibold mb-1">Modules</p>
+                        <p class="text-[#d4d4d8] text-sm font-medium">{{ stats.modules_count }}</p>
+                    </div>
+                    <div class="bg-[#09090b] border border-[#27272a] rounded p-3 text-center">
+                        <p class="text-[#52525b] text-[10px] uppercase font-semibold mb-1">Version</p>
+                        <p class="text-[#d4d4d8] text-sm font-medium">{{ stats.version }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="border-t border-[#27272a] pt-4">
+                <h2 class="text-sm font-semibold text-[#a1a1aa] mb-3">Repositories</h2>
+                <div class="flex gap-2 mb-3">
+                    <input v-model="newRepo" @keyup.enter="addRepo" placeholder="URL..." class="w-full p-2 bg-[#09090b] border border-[#27272a] rounded-md text-sm outline-none focus:border-emerald-900 transition-colors">
+                    <button @click="addRepo" :disabled="repoLoading" class="px-4 bg-emerald-900/80 text-emerald-100 border border-emerald-800/50 rounded-md text-xs font-semibold hover:bg-emerald-800 disabled:opacity-50 transition-colors">Add</button>
+                </div>
+                <div class="space-y-2 max-h-[150px] overflow-y-auto pr-1">
+                    <div v-for="repo in repos" :key="repo" class="flex justify-between items-center p-2.5 border border-[#27272a] bg-[#09090b]/30 rounded-md">
+                        <span class="text-xs text-[#a1a1aa] truncate">{{ repo }}</span>
+                        <button @click="removeRepo(repo)" class="text-[#52525b] hover:text-rose-500 text-xs font-semibold transition-colors px-2">Remove</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="cfgModal.open" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 backdrop-blur-sm p-4">
+            <div class="bg-[#18181b] border border-[#27272a] rounded-xl p-6 w-full max-w-[450px] shadow-2xl modal-fade-enter-active relative">
+                <button @click="closeConfig" class="absolute top-4 right-4 text-[#52525b] hover:text-white transition-colors">✕</button>
+                <h2 class="text-base font-semibold text-white mb-1">Configure {{ cfgModal.modName }}</h2>
+                
+                <div v-if="cfgModal.msg" :class="cfgModal.msg.includes('Error') ? 'text-rose-500 border-rose-950 bg-rose-950/20' : 'text-emerald-500 border-emerald-950 bg-emerald-950/20'" class="text-[11px] p-2 rounded-md mb-4 border mt-3 font-medium">
+                    {{ cfgModal.msg }}
+                </div>
+                <div v-else class="h-[10px] mb-4 mt-3"></div>
+
+                <form v-else @submit.prevent="saveConfig" class="space-y-4 max-h-[50vh] overflow-y-auto pr-2">
+                    <div v-for="item in cfgModal.schema" :key="item.key">
+                        <label class="block text-xs font-medium text-[#a1a1aa] mb-1 flex items-center gap-1">
+                            {{ item.key }} <span v-if="item.required" class="text-rose-900">*</span> <span v-if="!item.editable" title="Locked">🔒</span>
+                        </label>
+                        <input v-model="item.value" type="text" :placeholder="item.default" :disabled="!item.editable" :class="!item.editable ? 'bg-[#141417] text-[#424248] border-[#27272a]' : 'bg-[#09090b] text-white border-[#27272a] focus:border-emerald-900'" class="w-full p-2 border rounded-md text-sm outline-none transition-colors">
+                        <p class="text-[10px] text-[#52525b] mt-1">{{ item.description }}</p>
+                    </div>
+                    <div class="pt-4 flex justify-end gap-2 border-t border-[#27272a]">
+                        <button type="button" @click="closeConfig" class="px-4 py-2 rounded-md text-xs font-medium text-[#71717a] hover:bg-[#27272a] transition-colors">Cancel</button>
+                        <button type="submit" :disabled="cfgModal.saving" class="px-4 py-2 bg-emerald-900/80 text-emerald-100 border border-emerald-800/50 rounded-md text-xs font-semibold hover:bg-emerald-800 disabled:opacity-50 transition-colors">
+                            {{ cfgModal.saving ? 'Saving...' : 'Save' }}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endraw %}
+    <script src="/static/js/panel.js"></script>
+</body>
+</html>

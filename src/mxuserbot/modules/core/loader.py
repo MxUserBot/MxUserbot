@@ -1,224 +1,246 @@
 import asyncio
+import logging
+from pathlib import Path
+from typing import Any
+
+from pydantic import BaseModel, Field, model_validator, ConfigDict
 from mautrix.types import MessageEvent
 
 from ...core import loader, utils
 
-DEFAULT_REPO_URL = "https://raw.githubusercontent.com/MxUserBot/mx-modules/main"
+
+class MdlPayload(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    target: str = ""
+    is_dev: bool = False
+
+    @model_validator(mode='before')
+    @classmethod
+    def parse_mdl(cls, v: Any):
+        if not v or not isinstance(v, str):
+            return {"target": ""}
+        parts = v.split(maxsplit=1)
+        if parts[0].lower() == "dev":
+            return {"is_dev": True, "target": parts[1] if len(parts) > 1 else ""}
+        return {"is_dev": False, "target": v}
+
+class RepoPayload(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    url: str
+
+    @model_validator(mode='before')
+    @classmethod
+    def parse(cls, v: Any):
+        if isinstance(v, str):
+            return {"url": utils.convert_repo_url(v.strip())}
+        return {"url": ""}
+
+class SearchPayload(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    query: str = Field(default="")
+
+    @model_validator(mode='before')
+    @classmethod
+    def parse_search(cls, v: Any):
+        return {"query": v.strip()} if isinstance(v, str) else {"query": ""}
+
+class UnmdPayload(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    name: str
+
+    @model_validator(mode='before')
+    @classmethod
+    def parse(cls, v: Any):
+        return {"name": v.strip()} if isinstance(v, str) else {"name": ""}
+
+
 
 class Meta:
     name = "LoaderModule"
-    _cls_doc = "Module downloader and manager with multi-repository support."
-    version = "1.9.0"
+    description = "Module Manager"
+    version = "3.0.0"
     tags = ["system"]
+
 
 @loader.tds
 class LoaderModule(loader.Module):
     config = {
-        "repo_url": loader.ConfigValue(DEFAULT_REPO_URL, "Main system repository URL"),
+        "repo_url": loader.ConfigValue("https://raw.githubusercontent.com/MxUserBot/mx-modules/main", "Main system repository URL"),
         "repo_warn_ok": loader.ConfigValue(False, "User accepted third-party repo warning"),
         "dev_warn_ok": loader.ConfigValue(False, "User accepted dev/file installation warning")
     }
 
     strings = {
-        "no_url_or_reply": "❌ | <b>Provide a Module ID, User/Module shortcut, or use <code>.mdl dev [url]</code>.</b>",
         "downloading": "⏳ | <b>Downloading...</b>",
-        "fetching": "⏳ | <b>Searching for <code>{id}</code>...</b>",
+        "fetching": "⏳ | <b>Processing <code>{id}</code>...</b>",
         "repo_not_found": "❌ | <b>Module <code>{id}</code> not found in any repository.</b>",
-        "done": "✅ | <b>Module loaded: <code>{name}</code></b>",
+        "done": "✅ | <b>Module <code>{name}</code> loaded successfully!</b>",
         "error": "❌ | <b>Error: <code>{err}</code></b>",
         "reloading": "⏳ | <b>Reloading all modules...</b>",
-        "reloaded_header": "<b>♻️ | Modules reloaded:</b><br>",
-        "module_item": "▫️ | <b><code>{name}</code></b><br>",
-        "no_name": "❌ | <b>Provide module name (without .py).</b>",
-        "not_found": "❌ | <b>Module <code>{name}</code> not found.</b>",
-        "unloaded": "✅ | <b>Module <code>{name}</code> unloaded and deleted.</b>",
-        "search_no_query": "❌ | <b>Provide search query.</b>",
-        "search_header_system": "<b>🌐 | Found in System Repository:</b><br>",
-        "search_header_community": "<br><b>👥 | Found in Community ({url}):</b><br>",
-        "search_item": "📦 | <b>{name}</b> (<code>{id}</code>) v<b>{version}</b><br>📝 | <i>{desc}</i><br>📥 | <b><code>.mdl {cmd_id}</code></b><br>",
-        "search_empty": "❌ | <b>No results found for <code>{query}</code>.</b>",
+        "reloaded": "♻️ | <b>Modules reloaded. Total: {count}</b>",
+        "unloaded": "✅ | <b>Module <code>{name}</code> unloaded.</b>",
+        "search_header": "<b>{icon} | Found in {type} Repo: <code>{url}</code></b><br>",
+        "search_item": "📦 | <b>{name}</b> (<code>{id}</code>) v<b>{version}</b><br>📥 | <b><code>.mdl {cmd_id}</code></b><br>",
+        "security_warn": "⚠️ | <b>SECURITY WARNING</b><br><b>Installing from {source}. Unsafe!</b><br><i>Wait {sec} seconds...</i>",
+        "dev_usage": "❌ | <b>Direct links/files require <code>dev</code> prefix.</b>",
+        "no_args": "❌ | <b>Provide Module ID, URL or reply to a .py file!</b>",
         "repo_added": "✅ | <b>Repository added: <code>{url}</code></b>",
         "repo_removed": "✅ | <b>Repository removed.</b>",
-        "repo_invalid": "❌ | <b>Invalid repository or missing index.json.</b>",
-        "file_not_py": "❌ | <b>File must be <code>.py</code></b>",
-        "reply_decrypt_err": "❌ | <b>Failed to decrypt file message.</b>",
-        "error_url": "❌ | <b>Provide repository URL.</b>",
-        "dev_usage": "❌ | <b>Direct links and files require <code>dev</code> prefix.</b><br>Example: <code>.mdl dev https://...</code>",
-        "invalid_module": "❌ | <b>Module structure is invalid (Missing Meta or Module class).</b>",
-        "security_repo": "⚠️ | <b>SECURITY WARNING</b><br><b>You are adding a third-party repository. Modules from unknown sources can steal your session keys.</b><br><i>Wait 5 seconds to proceed...</i>",
-        "security_module": "⚠️ | <b>SECURITY WARNING</b><br><b>Installing module from a community source. This action may be unsafe.</b><br><i>Wait 5 seconds to proceed...</i>",
-        "security_dev": "⚠️ | <b>SECURITY WARNING</b><br><b>You are installing a module from a file or direct link. This is for development purposes only.</b><br><i>Wait 10 seconds to proceed...</i>"
+        "invalid_file": "❌ | <b>ONLY .PY FILES ACCEPTED!</b>"
     }
 
-    @loader.command()
-    async def addrepo(self, mx, event: MessageEvent):
-        """<url> — Add a community repository"""
-        args = await utils.get_args(mx, event)
-        if not args: return await utils.answer(mx, self.strings.get("error_url"))
+    async def _matrix_start(self, mx):
+        self.repo = loader.RepoManager(mx, self._db, self.config.get("repo_url"))
+
+    async def _security_gate(self, mx, payload: MdlPayload, source_verified: bool, is_file: bool = False):
+        is_direct = payload.target.startswith(("http", "import ", "from ")) or is_file
         
-        url = utils.convert_repo_url(args[0])
-        try:
-            test = await utils.request(f"{url}/index.json", return_type="json")
-            if not test or "modules" not in test: raise Exception()
-        except:
-            return await utils.answer(mx, self.strings.get("repo_invalid"))
+        if is_direct and not payload.is_dev:
+            raise ValueError(self.strings["dev_usage"])
 
-        if not self.config.get("repo_warn_ok"):
-            await utils.answer(mx, self.strings.get("security_repo"))
-            await asyncio.sleep(5)
-            self.config.set("repo_warn_ok", True)
+        if is_direct: 
+            await self._wait_warning(mx, "dev", 10)
+        elif not source_verified: 
+            await self._wait_warning(mx, "repo", 5)
 
-        repos = await utils.get_community_repo(self._db)
-        if url not in repos:
-            repos.append(url)
-            await utils.set_community_repos(self._db, repos)
-        
-        await utils.answer(mx, self.strings.get("repo_added").format(url=url))
+    async def _wait_warning(self, mx, warn_type, sec):
+        conf_key = f"{warn_type}_warn_ok"
+        if not self.config.get(conf_key):
+            source_name = "community repo" if warn_type == "repo" else "direct link/file"
+            await utils.answer(mx, self.strings["security_warn"].format(source=source_name, sec=sec))
+            await asyncio.sleep(sec)
+            self.config.set(conf_key, True)
 
-    @loader.command()
-    async def delrepo(self, mx, event: MessageEvent):
-        """<url> — Remove a community repository"""
-        args = await utils.get_args(mx, event)
-        if not args: return await utils.answer(mx, self.strings.get("error_url"))
-        
-        url = utils.convert_repo_url(args[0])
-        repos = await utils.get_community_repo(self._db)
-        
-        if url in repos:
-            repos.remove(url)
-            await utils.set_community_repos(self._db, repos)
-            await utils.answer(mx, self.strings.get("repo_removed"))
-        else:
-            await utils.answer(mx, self.strings.get("error_url"))
 
-    @loader.command()
-    async def mdl(self, mx, event: MessageEvent):
-        """<url/id/user/module/reply> — Install module"""
-        args = await utils.get_args(mx, event)
-        reply_to = event.content.relates_to.in_reply_to if event.content.relates_to else None
-        
-        is_dev = args and args[0].lower() == "dev"
-        if is_dev: args = args[1:]
-
-        if reply_to and reply_to.event_id:
-            if not is_dev: return await utils.answer(mx, self.strings.get("dev_usage"))
-
-            if not self.config.get("dev_warn_ok"):
-                await utils.answer(mx, self.strings.get("security_dev"))
-                await asyncio.sleep(10)
-                self.config.set("dev_warn_ok", True)
-
-            try:
-                replied_event = await mx.client.get_event(event.room_id, reply_to.event_id)
-                filename, code_bytes = await utils.get_matrix_file_content(mx, replied_event)
-            except ValueError as e:
-                err_msg = str(e)
-                if err_msg == "decrypt_err": return await utils.answer(mx, self.strings.get("reply_decrypt_err"))
-                if err_msg == "not_a_file": return await utils.answer(mx, self.strings.get("file_not_py"))
-                return await utils.answer(mx, self.strings.get("error").format(err=err_msg))
-
-            if not filename.endswith(".py"): return await utils.answer(mx, self.strings.get("file_not_py"))
-            
-            await utils.answer(mx, self.strings.get("downloading"))
-            try:
-                success = await utils.install_module_file(self.loader, mx, filename, code_bytes.decode("utf-8"))
-                if success: return await utils.answer(mx, self.strings.get("done").format(name=filename))
-                else: return await utils.answer(mx, self.strings.get("invalid_module"))
-            except Exception as e: 
-                return await utils.answer(mx, self.strings.get("error").format(err=str(e)))
-
-        if not args: return await utils.answer(mx, self.strings.get("no_url_or_reply"))
-        target = args[0]
-        
-        await utils.answer(mx, self.strings.get("fetching").format(id=target))
-
-        repos = await utils.get_community_repo(self._db)
-        system_repo = self.config.get("repo_url")
-        url, filename, from_community, needs_dev_warning = await utils.resolve_module_target(
-            target, system_repo, repos, utils.request
-        )
-
-        if not url: return await utils.answer(mx, self.strings.get("repo_not_found").format(id=target))
-
-        if needs_dev_warning and not is_dev:
-            return await utils.answer(mx, self.strings.get("dev_usage"))
-
-        if needs_dev_warning:
-            if not self.config.get("dev_warn_ok"):
-                await utils.answer(mx, self.strings.get("security_dev"))
-                await asyncio.sleep(10)
-                self.config.set("dev_warn_ok", True)
-        elif from_community:
-            await utils.answer(mx, self.strings.get("security_module"))
-            await asyncio.sleep(5)
+    @loader.command(aliases=["ms"])
+    async def msearch(self, mx, event: MessageEvent, payload: SearchPayload):
+        """<query> — search module in repo"""
+        if not payload.query:
+            return await utils.answer(mx, self.strings["no_args"])
 
         try:
-            await utils.answer(mx, self.strings.get("downloading"))
-            code = await utils.request(url, return_type="text")
+            results = await self.repo.search(payload.query)
+            if not results:
+                return await utils.answer(mx, self.strings["search_empty"].format(query=payload.query))
+
+            output = []
+            for res in results:
+                icon, rtype = ("✅", "SYSTEM") if res["is_verified"] else ("👥", "COMMUNITY")
+                header = self.strings["search_header"].format(icon=icon, type=rtype, url=res["repo_url"])
+                
+                prefix = ""
+                if not res["is_verified"]:
+                    parts = res["repo_url"].split("/")
+                    prefix = f"{parts[3]}/" if "github" in res["repo_url"] and len(parts) > 3 else "comm/"
+
+                mods = [
+                    self.strings["search_item"].format(
+                        name=mod.get("name", "Unknown"),
+                        id=mod.get("id"),
+                        version=mod.get("version", "1.0.0"),
+                        cmd_id=f"{prefix}{mod.get('id')}"
+                    ) for mod in res["modules"]
+                ]
+                output.append(header + "".join(mods))
+
+            await utils.answer(mx, "<br>".join(output))
+        except Exception as e:
+            await utils.answer(mx, self.strings["error"].format(err=str(e)))
+
+
+    @loader.command()
+    async def mdl(self, mx, event: MessageEvent, payload: MdlPayload):
+        """[dev] <id/url/reply> — install module."""
+        reply = event.content.relates_to.in_reply_to if event.content.relates_to else None
+
+        try:
+            if reply:
+                await self._security_gate(mx, payload, False, is_file=True)
+                msg_event = await mx.client.get_event(event.room_id, reply.event_id)
+                fname, content = await self.repo.get_file_content(msg_event)
+                
+                if not fname.endswith(".py"):
+                    return await utils.answer(mx, self.strings["invalid_file"])
+                
+                await utils.answer(mx, self.strings["downloading"])
+                path = Path(self.loader.community_path) / fname
+                path.write_bytes(content)
+                await self.loader.register_module(path, mx, is_core=False)
+                return await utils.answer(mx, self.strings["done"].format(name=fname))
+
+            if not payload.target:
+                return await utils.answer(mx, self.strings["no_args"])
+
+            await utils.answer(mx, self.strings["fetching"].format(id=payload.target[:20]))
+            url, source = await self.repo.resolve_and_download(payload.target)
             
-            if await utils.install_module_file(self.loader, mx, filename, code):
-                await utils.answer(mx, self.strings.get("done").format(name=filename))
+            if not url:
+                return await utils.answer(mx, self.strings["repo_not_found"].format(id=payload.target))
+                
+            await self._security_gate(mx, payload, getattr(source, "is_verified", False))
+
+            await utils.answer(mx, self.strings["downloading"])
+            if await self.repo.install(payload.target):
+                filename = url.split("/")[-1]
+                await utils.answer(mx, self.strings["done"].format(name=filename))
             else:
-                await utils.answer(mx, self.strings.get("invalid_module"))
-        except Exception as e: 
-            await utils.answer(mx, self.strings.get("error").format(err=str(e)))
+                await utils.answer(mx, self.strings["error"].format(err="Install failed!"))
+
+        except ValueError as v:
+            await utils.answer(mx, str(v))
+        except Exception as e:
+            await utils.answer(mx, self.strings["error"].format(err=str(e)))
+
 
     @loader.command()
-    async def msearch(self, mx, event: MessageEvent):
-        """<query> — Search in all repositories"""
-        args = await utils.get_args(mx, event)
-        if not args: return await utils.answer(mx, self.strings.get("search_no_query"))
+    async def addrepo(self, mx, event: MessageEvent, payload: RepoPayload):
+        """<url> — add repo"""
+        if not payload.url:
+            return await utils.answer(mx, self.strings["no_args"])
 
-        query = " ".join(args).lower()
-        repos = await utils.get_community_repo(self._db)
+        test = await self.repo._fetch_index(payload.url)
+        if not test: 
+            return await utils.answer(mx, "❌ | <b>Invalid repo or index!</b>")
         
-        results_data = await utils.search_modules_in_repos(query, self.config.get("repo_url"), repos, utils.request)
-
-        if not results_data: 
-            return await utils.answer(mx, self.strings.get("search_empty").format(query=query))
-
-        output = ""
-        for repo_data in results_data:
-            output += self.strings.get("search_header_system") if repo_data["is_system"] else self.strings.get("search_header_community").format(url=repo_data["url"])
-            prefix = "" if repo_data["is_system"] else f"{utils.get_prefix_from_url(repo_data['url'])}/"
+        await self._wait_warning(mx, "repo", 5)
+        
+        repos = await self.repo.get_repos()
+        if payload.url not in repos:
+            repos.append(payload.url)
+            await self._db.set("core", "community_repos", repos)
             
-            for mod in repo_data["modules"]:
-                output += self.strings.get("search_item").format(
-                    name=mod.get("name"), 
-                    id=mod.get("id"), 
-                    version=mod.get("version"), 
-                    desc=mod.get("description"),
-                    cmd_id=f"{prefix}{mod.get('id')}"
-                )
-        await utils.answer(mx, output)
+        await utils.answer(mx, self.strings["repo_added"].format(url=payload.url))
+
+
+    @loader.command()
+    async def delrepo(self, mx, event: MessageEvent, payload: RepoPayload):
+        """<url> — delete repo"""
+        if not payload.url:
+            return await utils.answer(mx, self.strings["no_args"])
+            
+        repos = await self.repo.get_repos()
+        if payload.url in repos:
+            repos.remove(payload.url)
+            await self._db.set("core", "community_repos", repos)
+            await utils.answer(mx, self.strings["repo_removed"])
+
 
     @loader.command()
     async def reload(self, mx, event: MessageEvent):
-        """Reload all modules"""
-        await utils.answer(mx, self.strings.get("reloading"))
-        for name in list(mx.active_modules.keys()):
-            try: await self.loader.unload_module(name, mx)
-            except: continue
-            
+        """Reload everything modules!"""
+        await utils.answer(mx, self.strings["reloading"])
         await self.loader.register_all(mx)
-        
-        msg = self.strings.get("reloaded_header")
-        for name in mx.active_modules.keys():
-            msg += self.strings.get("module_item").format(name=name)
-        await utils.answer(mx, msg)
+        await utils.answer(mx, self.strings["reloaded"].format(count=len(mx.active_modules)))
+
 
     @loader.command()
-    async def unmd(self, mx, event: MessageEvent):
-        """<name> — Unload and delete module"""
-        args = await utils.get_args(mx, event)
-        if not args: return await utils.answer(mx, self.strings.get("no_name"))
-        
-        name = args[0]
-        if name not in mx.active_modules: 
-            return await utils.answer(mx, self.strings.get("not_found").format(name=name))
+    async def unmd(self, mx, event: MessageEvent, payload: UnmdPayload):
+        """<name> — delete module"""
+        if not payload.name:
+            return await utils.answer(mx, self.strings["no_args"])
             
         try:
-            await utils.uninstall_module_file(self.loader, mx, name)
-            await utils.answer(mx, self.strings.get("unloaded").format(name=name))
-        except Exception as e: 
-            await utils.answer(mx, self.strings.get("error").format(err=str(e)))
+            await self.repo.uninstall(payload.name)
+            await utils.answer(mx, self.strings["unloaded"].format(name=payload.name))
+        except Exception as e:
+            await utils.answer(mx, self.strings["error"].format(err=str(e)))

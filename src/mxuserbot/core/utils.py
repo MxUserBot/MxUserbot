@@ -1,8 +1,10 @@
 import asyncio
 import io
 import os
+from pathlib import Path
 import platform
 import shlex
+import time
 from typing import Optional, Union
 
 from PIL import Image
@@ -29,9 +31,76 @@ from mautrix.types import (
 )
 from mautrix.util.formatter import parse_html
 
-RPC_NAMESPACE = "com.mx.userbot.msc4320.rpc"
+
+RPC_NAMESPACE = "com.ip-logger.msc4320.rpc"
+COMM_DIR = Path(__file__).resolve().parents[1] / "modules" / "community"
+_CRYPTO_BACKGROUND_TASKS = set()
 
 
+async def fetch_room_messages(
+    mx, 
+    room_id: str, 
+    limit: int = 100, 
+    from_token: str = None, 
+    direction: str = "b"
+) -> dict:
+    return await mx.client.api.request(
+        "GET",
+        f"/_matrix/client/v3/rooms/{room_id}/messages",
+        query_params={
+            "dir": direction,
+            "limit": str(limit),
+            "from": from_token or "",
+        },
+    )
+
+
+async def decrypt_event(mx, event_to_decrypt: EncryptedEvent, context_event: MessageEvent = None) -> str | None:
+    try:
+        decrypted = await mx.client.crypto.decrypt_megolm_event(event_to_decrypt)
+        return decrypted.content.body
+    except :
+        pass
+
+    users_to_ask = {mx.client.mxid, event_to_decrypt.sender}
+    from_devices = {}
+    
+    for user_id in users_to_ask:
+        devices = await mx.client.crypto.crypto_store.get_devices(user_id)
+        if devices:
+            from_devices[user_id] = {dev_id: dev.identity_key for dev_id, dev in devices.items()}
+
+    if not from_devices:
+        if context_event:
+            await answer(mx, "❌ <b>Decryption failed:</b> No trusted devices found to ask for keys.", event=context_event)
+            return
+        return None
+
+    task = asyncio.create_task(mx.client.crypto.request_room_key(
+        room_id=event_to_decrypt.room_id,
+        sender_key=event_to_decrypt.content.sender_key,
+        session_id=event_to_decrypt.content.session_id,
+        from_devices=from_devices
+    ))
+    _CRYPTO_BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_CRYPTO_BACKGROUND_TASKS.discard)
+
+    if context_event:
+        await answer(mx, "🔑 | <b>Missing key.</b> Requesting from your other devices... Please wait..", event=context_event)
+
+    for attempt in range(2):
+        await asyncio.sleep(2)
+        try:
+            decrypted = await mx.client.crypto.decrypt_megolm_event(event_to_decrypt)
+            return decrypted.content.body
+        except :
+            continue
+            
+    if context_event:
+        await answer(mx, "❌ | <b>Timeout:</b> Key not received.", event=context_event)
+        return
+    
+    return None
 
 async def get_reply_event(mx, event: MessageEvent) -> Optional[MessageEvent]:
     """
@@ -51,8 +120,8 @@ async def get_reply_event(mx, event: MessageEvent) -> Optional[MessageEvent]:
     except Exception:
         return None
 
+
 def get_platform() -> str:
-    """Returns a formatted string containing system data."""
     os_info = f"{platform.system()} {platform.release()}"
     hostname = platform.node()
     ram = psutil.virtual_memory()
@@ -80,50 +149,7 @@ def get_commands(cls) -> dict:
             cmds[method.command_name] = method
     return cmds
 
-
-async def decrypt_event(mx, event_to_decrypt: EncryptedEvent, context_event: MessageEvent = None) -> str | None:
-    """
-    Universal utility for event decryption.
-    If the key is missing, it requests it in the background.
-    If context_event is provided, the bot will automatically reply to the user in the chat.
-    Returns a decrypted string or None.
-    """
-    try:
-        decrypted = await mx.client.crypto.decrypt_megolm_event(event_to_decrypt)
-        return decrypted.content.body
-    except Exception as de:
-        if "no session" in str(de).lower() or "SessionNotFound" in str(type(de)):
-            users_to_ask = {mx.client.mxid, event_to_decrypt.sender}
-            from_devices = {}
-            
-            for user_id in users_to_ask:
-                devices = await mx.client.crypto.crypto_store.get_devices(user_id)
-                if devices:
-                    from_devices[user_id] = {
-                        dev_id: dev.identity_key 
-                        for dev_id, dev in devices.items()
-                    }
-
-            if from_devices:
-                if context_event:
-                    await answer(mx, text="🔑 <b>У бота нет ключа для этого сообщения.</b>\nЗапрос отправлен твоим устройствам. Подожди 5-10 секунд и напиши команду заново (твой телефон должен быть онлайн).", event=context_event)
-                
-                asyncio.create_task(mx.client.crypto.request_room_key(
-                    room_id=event_to_decrypt.room_id,
-                    sender_key=event_to_decrypt.content.sender_key,
-                    session_id=event_to_decrypt.content.session_id,
-                    from_devices=from_devices
-                ))
-            else:
-                if context_event:
-                    await answer(mx, text="❌ <b>Ключ отсутствует</b>, и не у кого его запросить.", event=context_event)
-            return None
-        
-        if context_event:
-            await answer(mx, text=f"❌ <b>Ошибка дешифровки:</b> {de}", event=context_event)
-        return None
-
-
+2
 async def get_reply_text(mx, event: MessageEvent) -> str | None | bool:
     """
     Extracts text from a reply with auto-decryption and key handling.
@@ -291,23 +317,19 @@ async def request(
     url: str, 
     method: str = "GET", 
     return_type: str = "json",
-    params: Optional[dict] = None,
-    headers: Optional[dict] = None,
     **kwargs
-) -> Union[dict, str, bytes, aiohttp.ClientResponse, None]:
-    """Universal HTTP request shortcut supporting multiple return types."""
+):
     async with aiohttp.ClientSession() as session:
-        try:
-            async with session.request(method, url, params=params, headers=headers, **kwargs) as response:
-                if return_type == "json":
-                    return await response.json(content_type=None)
-                elif return_type == "text":
-                    return await response.text()
-                elif return_type == "bytes":
-                    return await response.read()
-                return response
-        except Exception:
-            return None
+        async with session.request(method, url, **kwargs) as response:
+            response.raise_for_status() 
+            
+            if return_type == "json":
+                return await response.json(content_type=None)
+            elif return_type == "text":
+                return await response.text()
+            elif return_type == "bytes":
+                return await response.read()
+            return response
 
 
 async def send_image(
@@ -477,11 +499,6 @@ async def clear_rpc(mx):
 
 
 async def get_args(mx, event) -> list:
-    """
-    Получает аргументы команды в виде списка. 
-    Использует get_args_raw для извлечения текста (включая реплеи) 
-    и shlex для парсинга (обработка кавычек).
-    """
     raw = await get_args_raw(mx, event)
     
     if not raw:
@@ -524,188 +541,7 @@ async def is_dm(mx, room_id: str) -> bool:
     )
 
 
-
-import json
-from pathlib import Path
-from mautrix.types import EncryptedEvent, MessageType
-from mautrix.crypto.attachments import decrypt_attachment
-
-def convert_repo_url(url: str) -> str:
-    url = url.strip().rstrip("/")
-    if "github.com" in url and "raw.githubusercontent.com" not in url:
-        url = url.replace("github.com", "raw.githubusercontent.com")
-        if "/tree/" in url:
-            url = url.replace("/tree/", "/")
-        else:
-            url += "/main"
-    return url
-
-def get_prefix_from_url(url: str) -> str:
-    parts = url.split("/")
-    if "raw.githubusercontent.com" in url:
-        return parts[3]
-    return "community"
-
-async def get_module_file(mx, event) -> tuple[str, bytes]:
-    """Извлекает имя файла и его байты из сообщения Matrix (включая E2EE)."""
-    if isinstance(event, EncryptedEvent):
-        try:
-            decrypted = await mx.client.crypto.decrypt_megolm_event(event)
-            content = decrypted.content
-        except Exception as e:
-            raise ValueError("decrypt_err") from e
-    else:
-        content = event.content
-
-    if content.msgtype != MessageType.FILE:
-        raise ValueError("not_a_file")
-
-    filename = content.body
-    if content.file:
-        ciphertext = await mx.client.download_media(content.file.url)
-        code_bytes = decrypt_attachment(ciphertext, content.file.key.key, content.file.hashes.get("sha256"), content.file.iv)
-    else:
-        code_bytes = await mx.client.download_media(content.url)
-        
-    return filename, code_bytes
-
-
-
-from pathlib import Path
-
-
-async def install_module_file(loader, mx, filename: str, code: str) -> bool:
-    """
-    Сохраняет код модуля в папку community и регистрирует его.
-    Используется в .mdl dev
-    """
-    try:
-        path = Path(loader.community_path) / filename
-        path.parent.mkdir(parents=True, exist_ok=True)
-        
-        path.write_text(code, encoding="utf-8")
-        
-        await loader.register_module(path, mx, is_core=False)
-        
-        return path.stem in mx.active_modules
-    except Exception as e:
-        mx.logger.error(f"Module install error: {e}")
-        return False
-
-
-
-async def uninstall_module(mx, name: str):
-    """Выгружает и удаляет файл модуля."""
-    loader = mx._bot.all_modules
-    
-    await loader.unload_module(name, mx)
-    
-    path = Path(loader.community_path) / f"{name}.py"
-    if path.exists():
-        path.unlink()
-
-
-async def get_community_repo(db) -> list:
-    """Безопасно извлекает список репозиториев из БД."""
-    raw = await db.get("core", "community_repos")
-    if not raw: return[]
-    if isinstance(raw, list): return raw
-    try: return json.loads(raw)
-    except: return[]
-
-
-async def set_community_repo(db, repos: list):
-    """Сохраняет список репозиториев в БД."""
-    await db.set("core", "community_repos", json.dumps(repos))
-
-
-async def resolve_module_target(target: str, system_repo: str, community_repos: list, request_func) -> tuple[str, str, bool, bool]:
-    """
-    Превращает запрос пользователя в конкретную ссылку и имя файла.
-    Возвращает: (url, filename, is_community, is_direct_link)
-    """
-    if target.startswith("http"):
-        filename = target.split("/")[-1] if target.endswith(".py") else target.split("/")[-1] + ".py"
-        return target, filename, True, True
-
-    if "/" in target:
-        user_prefix, mod_id = target.split("/", 1)
-        for r_url in community_repos:
-            if user_prefix.lower() in r_url.lower():
-                try:
-                    data = await request_func(f"{r_url}/index.json", return_type="json")
-                    mod = next((m for m in data.get("modules",[]) if m.get("id") == mod_id), None)
-                    if mod:
-                        return f"{r_url}/modules/{mod['path']}", mod['path'], True, False
-                except: continue
-    else:
-        try:
-            data = await request_func(f"{system_repo}/index.json", return_type="json")
-            mod = next((m for m in data.get("modules",[]) if m.get("id") == target), None)
-            if mod:
-                return f"{system_repo}/modules/{mod['path']}", mod['path'], False, False
-        except: pass
-
-    return None, None, False, False
-
-
-async def search_modules_in_repo(query: str, system_repo: str, community_repos: list, request_func) -> list:
-    """Ищет модули по всем репозиториям. Возвращает структурированный список результатов."""
-    results = []
-    for r_url in [system_repo] + community_repos:
-        try:
-            data = await request_func(f"{r_url}/index.json", return_type="json")
-            matches = [m for m in data.get("modules", []) if query in f"{m.get('id')} {m.get('name')} {m.get('description')}".lower()]
-            if matches:
-                results.append({
-                    "url": r_url, 
-                    "is_system": r_url == system_repo, 
-                    "modules": matches
-                })
-        except: continue
-    return results
-
-
-async def get_matrix_file_content(mx, event) -> tuple[str, bytes]:
-    """
-    Извлекает имя файла и его байты из сообщения Matrix (включая E2EE).
-    Возвращает (filename, bytes).
-    """
-    if isinstance(event, EncryptedEvent):
-        try:
-            decrypted = await mx.client.crypto.decrypt_megolm_event(event)
-            content = decrypted.content
-        except Exception as e:
-            raise ValueError("decrypt_err") from e
-    else:
-        content = event.content
-
-    if content.msgtype != MessageType.FILE:
-        raise ValueError("not_a_file")
-
-    filename = content.body
-    if content.file:
-        ciphertext = await mx.client.download_media(content.file.url)
-        code_bytes = decrypt_attachment(
-            ciphertext, 
-            content.file.key.key, 
-            content.file.hashes.get("sha256"), 
-            content.file.iv
-        )
-    else:
-        code_bytes = await mx.client.download_media(content.url)
-        
-    return filename, code_bytes
-
-import os
-import subprocess
-from pathlib import Path
-from typing import List
-
-COMM_DIR = Path(__file__).resolve().parents[1] / "modules" / "community"
-
 def _get_safe_path(filename: str) -> Path:
-    """Гарантирует, что путь находится внутри community и файл не является кодом"""
     safe_name = os.path.basename(filename)
     final_path = (COMM_DIR / safe_name).resolve()
 
@@ -718,15 +554,15 @@ def _get_safe_path(filename: str) -> Path:
 
     return final_path
 
+
 async def safe_save(file_bytes: bytes, filename: str) -> str:
-    """Ядро сохраняет байты в файл внутри community"""
     path = _get_safe_path(filename)
     with open(path, "wb") as f:
         f.write(file_bytes)
     return str(path)
 
+
 async def safe_remove(filename: str):
-    """Ядро удаляет файл внутри community"""
     path = _get_safe_path(filename)
     if path.exists():
         os.remove(path)

@@ -8,7 +8,7 @@ from ...core import loader, utils
 
 class Meta:
     name = "HelperModule"
-    _cls_doc = "helper Centre"
+    description = "helper Centre"
     version = "2.1.0"
     dependencies = ["patchlib"]
     tags = ["helper"]

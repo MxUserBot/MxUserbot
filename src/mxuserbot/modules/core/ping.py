@@ -2,13 +2,10 @@ import time
 
 from ...core import loader, utils
 
-from mautrix.types import MessageEvent, EventType
-from mautrix.client import Client
-
 
 class Meta:
     name = "PingPong"
-    _cls_doc = "Simple ping-pong + dm checker"
+    description = "Simple ping-pong + dm checker"
     version = "1.1.0"
     tags = ["system"]
 

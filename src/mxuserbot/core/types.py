@@ -11,11 +11,9 @@ import uuid
 from abc import ABC
 from typing import Any, AsyncGenerator, Dict, Optional, Callable
 
-import aiohttp
 from loguru import logger
 from mautrix.client import Client
 from mautrix.client.state_store import MemoryStateStore as BaseMemoryStateStore
-from mautrix.crypto.attachments import encrypt_attachment
 from mautrix.crypto.store import MemoryCryptoStore as BaseMemoryCryptoStore
 from mautrix.types import (
     CrossSigningUsage,
@@ -29,6 +27,7 @@ from olm.sas import Sas
 from ruamel.yaml.comments import CommentedMap
 
 from . import utils
+
 
 
 EMOJI_LIST =[
@@ -97,20 +96,14 @@ class ModuleConfig:
         return self._schema[key].description if key in self._schema else ""
     
     def get_missing_required(self) -> typing.Optional[str]:
-        """
-        Проверяет все ключи, помеченные как required.
-        Возвращает имя первого пропущенного ключа или None.
-        """
         for key, cfg in self._schema.items():
             if cfg.required:
                 val = self._cache.get(key)
-                # Считаем пустым, если: None, строка "NONE", или просто пустая строка
                 if val is None or val == "NONE" or (isinstance(val, str) and not val.strip()):
                     return key
         return None
 
     def get_description(self, key: str) -> str:
-        """Безопасно достает описание ключа"""
         return self._schema[key].description if key in self._schema else "No description"
 
 
@@ -120,16 +113,17 @@ class ConfigValue:
         default: Any,
         description: str = "",
         validator: Optional[Callable[[Any], bool]] = None,
+        forbid: bool = False,
         required: bool = False
     ):
         self.default = default
+        self.required = required
         self.description = description
         self.validator = validator
-        self.required = required
+        self.forbid = forbid
         self.type = type(default)
 
     def _convert(self, val: Any) -> Any:
-        """Приводит входное значение (обычно строку из чата) к нужному типу."""
         if isinstance(val, self.type):
             return val
         
@@ -202,17 +196,9 @@ class Module(ABC):
     async def _matrix_start(self, mx):
         pass
 
-    async def _matrix_message(self, mx, event):
-        pass
-
-    async def _matrix_member(self, mx, event):
-        pass
-
     def _matrix_stop(self, mx):
         pass
 
-    async def _matrix_poll(self, mx, pollcount):
-        pass
 
 
 class Config(BaseFileConfig):
@@ -306,26 +292,6 @@ class CustomMemoryStateStore(BaseMemoryStateStore):
             if user_id in members:
                 shared.append(room_id)
         return shared
-
-
-import asyncio
-import base64
-import hashlib
-import json
-import time
-import uuid
-from typing import Any, Dict, Optional
-
-from mautrix.client import Client
-from mautrix.types import EventType, ToDeviceEvent, TrustState
-
-# подставь свои импорты
-# from .sas import Sas
-# from .constants import EMOJI_LIST
-# from loguru import logger
-
-from mautrix.types import KeyID
-from mautrix.crypto.signature import sign_olm
 
 
 class BotSASVerification:

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>MXUserbot | Session Initialization</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/auth.css">
+</head>
+<body class="text-[#e4e4e7] min-h-screen flex items-center justify-center p-4">
+    <canvas id="cosmos"></canvas>
+    <div class="orbit orbit-1"></div>
+    <div class="orbit orbit-2"></div>
+
+    {% raw %}
+    <div id="app" class="w-full max-w-[520px] z-10 relative">
+        <div class="lang-container">
+            <button v-for="l in ['en', 'ru']" :key="l" @click="setLang(l)" :class="['lang-btn', { active: lang === l }]">{{ l.toUpperCase() }}</button>
+        </div>
+
+        <transition name="view-fade" mode="out-in">
+            <!-- WELCOME SCREEN -->
+            <div v-if="view === 'welcome'" key="welcome" class="bg-[#18181b]/80 border border-[#27272a] rounded-2xl p-10 text-center shadow-2xl backdrop-blur-md">
+                <h1 class="text-3xl font-bold mb-2 text-white mt-4">{{ t('app_title') }}</h1>
+                <p class="text-[#a1a1aa] text-sm mb-8">{{ t('welcome_subtitle') }}</p>
+                <div class="quote-box text-left">
+                    <p class="text-xs leading-relaxed text-[#d4d4d8]" v-html="t('welcome_desc')"></p>
+                </div>
+                <div class="space-y-3 mb-8 text-left text-sm text-[#71717a]">
+                    <div v-for="i in [1,2,3]" class="flex items-center gap-3">
+                        <div class="w-1 h-1 rounded-full bg-emerald-500"></div>
+                        <span>{{ t('feature_' + i) }}</span>
+                    </div>
+                </div>
+                <button @click="view = 'warning'" class="w-full p-4 bg-emerald-900/80 text-emerald-50 hover:bg-emerald-800 border border-emerald-700/50 rounded-xl text-sm font-semibold transition-all">
+                    {{ t('btn_get_started') }}
+                </button>
+            </div>
+
+            <!-- WARNING SCREEN -->
+            <div v-else-if="view === 'warning'" key="warning" class="bg-[#18181b]/80 border border-rose-900/30 rounded-2xl p-10 text-center shadow-2xl backdrop-blur-md">
+                <h1 class="text-2xl font-bold mb-4 text-rose-400 mt-4">{{ t('warning_title') }}</h1>
+                <div class="quote-box border-rose-600 bg-rose-950/10 text-left">
+                    <p class="text-xs leading-relaxed text-[#a1a1aa]">{{ t('warning_text') }}</p>
+                </div>
+                <div class="flex flex-col gap-3">
+                    <button @click="view = 'login'" class="w-full p-3.5 bg-rose-900/80 text-rose-50 hover:bg-rose-800 border border-rose-700/50 rounded-xl text-sm font-semibold transition-all">{{ t('btn_accept') }}</button>
+                    <button @click="terminate" class="w-full p-3.5 bg-[#27272a] text-[#a1a1aa] hover:text-white rounded-xl text-sm font-medium transition-all">{{ t('btn_decline') }}</button>
+                </div>
+            </div>
+
+            <!-- LOGIN SCREEN -->
+            <form v-else-if="view === 'login'" key="login" @submit.prevent="handleLogin" class="bg-[#18181b]/80 border border-[#27272a] rounded-2xl p-10 text-center shadow-2xl backdrop-blur-md">
+                <h1 class="text-2xl font-bold mb-2 text-white mt-4">{{ t('auth_title') }}</h1>
+                <p class="text-[#a1a1aa] text-sm mb-8">{{ t('auth_subtitle') }}</p>
+                <div class="space-y-4 mb-8 text-left">
+                    <div>
+                        <label class="block text-[10px] font-bold text-[#52525b] mb-1.5 uppercase tracking-widest">{{ t('label_mxid') }}</label>
+                        <input v-model="form.mxid" type="text" placeholder="@user:matrix.org" required class="w-full p-3 bg-[#09090b] border border-[#27272a] text-white text-sm rounded-xl focus:border-emerald-900 outline-none transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-[#52525b] mb-1.5 uppercase tracking-widest">{{ t('label_password') }}</label>
+                        <input v-model="form.password" type="password" placeholder="••••••••" required class="w-full p-3 bg-[#09090b] border border-[#27272a] text-white text-sm rounded-xl focus:border-emerald-900 outline-none transition-all">
+                    </div>
+                </div>
+                <div class="flex flex-col gap-3">
+                    <button type="submit" :disabled="loading" class="w-full p-3.5 bg-emerald-900/80 text-emerald-50 hover:bg-emerald-800 border border-emerald-700/50 rounded-xl text-sm font-semibold transition-all disabled:opacity-50">
+                        <span v-if="!loading">{{ t('btn_signin') }}</span>
+                        <span v-else class="flex items-center justify-center gap-2"><div class="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></div></span>
+                    </button>
+                    <button type="button" @click="view = 'welcome'" class="text-xs text-[#71717a] hover:text-[#a1a1aa] transition-colors">{{ t('btn_cancel') }}</button>
+                </div>
+            </form>
+
+            <!-- RESULT SCREEN -->
+            <div v-else-if="view === 'result'" key="result" class="bg-[#18181b]/80 border border-[#27272a] rounded-2xl p-10 text-center shadow-2xl backdrop-blur-md">
+                <h1 :class="['text-3xl font-bold mb-4 mt-4', result.ok ? 'text-emerald-400' : 'text-rose-400']">
+                    {{ result.ok ? t('result_success') : t('result_failed') }}
+                </h1>
+                <p class="text-[#a1a1aa] text-sm mb-8 leading-relaxed">{{ result.msg }}</p>
+                <div class="flex flex-col gap-4">
+                    <button v-if="result.ok" @click="goToPanel" class="w-full p-4 bg-emerald-900/80 text-emerald-50 border border-emerald-700/50 rounded-xl text-sm font-semibold transition-all">Go to Panel</button>
+                    <button v-else @click="view = 'login'" class="w-full p-3.5 bg-[#27272a] text-white rounded-xl text-sm font-semibold transition-all">Try Again</button>
+                </div>
+            </div>
+        </transition>
+    </div>
+    {% endraw %}
+    <script src="/static/js/auth.js"></script>
+</body>
+</html>

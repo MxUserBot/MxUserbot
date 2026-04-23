@@ -3,9 +3,10 @@ from ...core import loader, utils
 
 class Meta:
     name = "Security"
-    _cls_doc = "Ultimate access control with validation."
+    description = "Ultimate access control with validation."
     version = "1.0.0"
     tags = ["settings"]
+
 
 @loader.tds
 class SecurityModule(loader.Module):

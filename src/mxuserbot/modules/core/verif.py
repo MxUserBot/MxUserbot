@@ -3,9 +3,10 @@ from mautrix.types import MessageEvent, TrustState
 
 class Meta:
     name = "VerifierModule"
-    _cls_doc = "Device trust management and verification."
+    description = "Device trust management and verification."
     version = "1.0.1"
     tags = ["settings"]
+    
     
 @loader.tds
 class VerifierModule(loader.Module):

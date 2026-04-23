@@ -4,7 +4,7 @@ from ...core import loader, utils
 
 class Meta:
     name = "PrefixModule"
-    _cls_doc = "Управление префиксом команд юзербота."
+    description = "Управление префиксом команд юзербота."
     version = "1.0.1"
     tags = ["settings"]
 
