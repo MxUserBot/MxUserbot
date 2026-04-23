@@ -182,8 +182,7 @@ class CallBack:
 
             except (ValidationError, UsageError):
                 raw_doc = getattr(orig_f, "__doc__", "") or ""
-                usage = raw_doc.strip().splitlines()[0].split("|")[0].strip()
-                clean = usage.replace("<", "&lt;").replace(">", "&gt;")
+                clean = raw_doc.replace("<", "&lt;").replace(">", "&gt;")
 
                 await wrapped.reply(f"ℹ️ <b>Usage:</b> <code>{prefix}{cmd_name} {clean}</code>")
                 return
