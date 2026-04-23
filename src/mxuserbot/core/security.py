@@ -76,7 +76,7 @@ class SekaiSecurity:
         ]
         self.forbidden_core =[
             "login", "logout", "logout_all", "create_device_msc4190",
-            "add_dispatcher", "remove_dispatcher", "stop", "start"
+            "add_dispatcher", "remove_dispatcher"
         ]
         self.forbidden_attrs = ["crypto", "crypto_enabled", "api", "device_id"]
         
