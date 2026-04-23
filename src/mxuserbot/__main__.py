@@ -81,7 +81,6 @@ class MXBotInterface:
     def should_ignore_event(self, evt: MessageEvent) -> bool:
         return self._should_ignore_event_func(evt)
 
-
 class MXUserBot(Program):
     """Main userbot class, refactored by a pro."""
 
