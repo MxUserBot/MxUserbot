@@ -182,8 +182,8 @@ class MXUserBot(Program):
             )
             await self.client.join_room(log_room_id)
             msg_id = await utils.answer(self.interface, "✅ | Log room initialized.", room_id=log_room_id)
-            if msg_id:
-                await utils.pin(self.interface, log_room_id, msg_id)
+            await utils.pin_room(self.interface, log_room_id)
+            await utils.pin(self.interface, log_room_id, msg_id)
 
         await self._db.set("core", "log_room_id", str(log_room_id))
         return str(log_room_id)
