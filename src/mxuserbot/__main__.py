@@ -22,10 +22,10 @@ from mautrix.crypto.store.asyncpg import PgCryptoStore, PgCryptoStateStore
 from mautrix.util.config import BaseFileConfig, ConfigUpdateHelper, RecursiveDict
 
 from .core import utils
-from .core.loader import Loader, FSM
+from .core.loader import Loader
 from .core.callback import CallBack
 from .core.security import SekaiSecurity
-from .core.types import BotSASVerification, InterceptHandler
+from .core.types import BotSASVerification, InterceptHandler, FSM
 from ..database import Database, AsyncSessionWrapper
 
 
