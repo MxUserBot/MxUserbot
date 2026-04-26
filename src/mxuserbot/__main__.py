@@ -22,7 +22,7 @@ from mautrix.crypto.store.asyncpg import PgCryptoStore, PgCryptoStateStore
 from mautrix.util.config import BaseFileConfig, ConfigUpdateHelper, RecursiveDict
 
 from .core import utils
-from .core.loader import Loader
+from .core.loader import Loader, FSM
 from .core.callback import CallBack
 from .core.security import SekaiSecurity
 from .core.types import BotSASVerification, InterceptHandler
@@ -54,6 +54,7 @@ class MXBotInterface:
     def __init__(self, bot: 'MXUserBot'):
         self._bot = bot
         self.version = bot.version
+
         
         self._get_prefix_func = bot.get_prefix
         self._should_ignore_event_func = bot.should_ignore_event
@@ -63,6 +64,10 @@ class MXBotInterface:
     def client(self) -> Client:
         return self._bot.client
 
+
+    @property
+    def fsm(self):
+        return self._bot.fsm
 
     @property
     def sas_verifier(self) -> BotSASVerification:
@@ -93,6 +98,8 @@ class MXUserBot(Program):
             version="2.0 | BETA",
             config_class=Config
         )
+        self.fsm = FSM()
+        self._ignore_ids = set()
 
         self.client: Optional[Client] = None
         self._db: Optional[Database] = None
@@ -127,6 +134,7 @@ class MXUserBot(Program):
     ) -> bool:
         if not evt.content.body:
             return True
+        
         return evt.timestamp < (self.start_time - 10000)
 
 
@@ -249,22 +257,8 @@ class MXUserBot(Program):
 
 
     async def run_api(self):
-        from .core.web.api.main import setup_routes
-        from fastapi import FastAPI
-        import uvicorn
-        
-        app = FastAPI(title="Sekai Bot API")
-        setup_routes(app, self, self.auth_completed)
-        self.server = uvicorn.Server(uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="error"))
-        self.server.install_signal_handlers = lambda: None
-        async def _serve_api():
-            try:
-                await self.server.serve()
-            except (KeyboardInterrupt, asyncio.CancelledError):
-                pass
-                
-        self.api_task = asyncio.create_task(_serve_api())
-        self.log.info(f"🌐 | API running: http://{self.server.config.host}:{self.server.config.port}")
+        from .core.web.api.main import run_web_server
+        await run_web_server(self, 8000)
 
 
     async def setup_userbot(

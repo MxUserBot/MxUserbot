@@ -14,7 +14,7 @@ from mautrix.types import (
     EventType
 )
 
-from . import utils
+from . import utils, loader
 from .exceptions import UsageError
 
 
@@ -32,8 +32,11 @@ class CallBack:
         evt: Any
     ) -> Any:
         async def reply(text: str, html: bool = True):
-            return await utils.answer(self.mx.interface, text, html=html, event=evt)
-
+            event_id = await utils.answer(self.mx.interface, text, html=html, event=evt)
+            
+            self.mx._ignore_ids.add(event_id)
+            
+            return event_id
 
         async def react(
             key: str
@@ -101,6 +104,10 @@ class CallBack:
         self,
         evt: MessageEvent
     ):
+        if evt.event_id in self.mx._ignore_ids:
+            self.mx._ignore_ids.remove(evt.event_id) 
+            return
+
         if self.mx.start_time and evt.timestamp < self.mx.start_time:
             return
         if not evt.content.body or self.mx.should_ignore_event(evt):
@@ -109,8 +116,25 @@ class CallBack:
         body = evt.content.body.strip()
         prefixes = await self.mx._db.get("core", "prefix")
         prefix = next((p for p in prefixes if body.startswith(p)), None)
-        
+
         wrapped = await self._wrap_event(evt)
+
+
+        current_state = self.mx.fsm.get_state(evt)
+
+        if current_state:
+            if prefix:
+                self.mx.fsm.finish(evt) 
+                for mod in self.mx.active_modules.values():
+                    if not mod.enabled: continue
+                    for attr_name in dir(mod):
+                        func = getattr(mod, attr_name)
+                        if callable(func) and getattr(func, "is_state", False):
+                            if getattr(func, "target_state", None) == current_state:
+                                ctx = loader.FSMContext(self.mx.fsm, evt)
+                                asyncio.create_task(func(self.mx.interface, wrapped, ctx))
+                                return
+                            
 
         if prefix:
             cmd_payload = body[len(prefix):].strip().split(maxsplit=1)
