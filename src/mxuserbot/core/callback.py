@@ -1,6 +1,7 @@
 import inspect
 import asyncio
 from typing import TYPE_CHECKING, Any
+
 if TYPE_CHECKING:
     from ..__main__ import MXUserBot
 
@@ -11,10 +12,13 @@ from mautrix.types import (
     StateEvent, 
     MessageEvent, 
     Membership, 
-    EventType
+    EventType,
+    TextMessageEventContent,
+    MessageType
 )
 
-from . import utils, loader
+from . import utils
+from .types import FSMContext
 from .exceptions import UsageError
 
 
@@ -75,6 +79,91 @@ class CallBack:
             for handler in handlers:
                 asyncio.create_task(self._safe_run_handler(mod, handler, wrapped_evt))
 
+    def _get_handler_params(
+        self,
+        func: callable,
+        reserved_count: int,
+    ) -> list[inspect.Parameter]:
+        orig_f = getattr(func, "__func__", func)
+        sig = inspect.signature(orig_f)
+        return list(sig.parameters.values())[reserved_count:]
+
+    def _extract_validation_message(
+        self,
+        error: ValidationError,
+    ) -> str:
+        try:
+            first_error = error.errors(include_url=False)[0]
+            return str(first_error.get("msg", "Validation error"))
+        except Exception:
+            return "Validation error"
+
+    def _build_handler_kwargs(
+        self,
+        params: list[inspect.Parameter],
+        raw_input: Any = None,
+        reply_text: str | None = None,
+    ) -> dict[str, Any]:
+        if not params:
+            return {}
+
+        kwargs: dict[str, Any] = {}
+        source = raw_input
+
+        if len(params) == 1:
+            if source in (None, "") and reply_text:
+                source = reply_text
+
+            if source is None:
+                if params[0].default is inspect.Parameter.empty:
+                    kwargs[params[0].name] = ""
+                return kwargs
+
+            kwargs[params[0].name] = source
+            return kwargs
+
+        if isinstance(source, str):
+            words = source.split(maxsplit=len(params) - 1) if source else []
+        elif source is None:
+            words = []
+        else:
+            words = [source]
+
+        for i, word in enumerate(words):
+            if i < len(params):
+                kwargs[params[i].name] = word
+
+        if reply_text:
+            mandatory = [
+                p
+                for p in params
+                if p.default in (inspect.Parameter.empty, None)
+            ]
+            for p in reversed(mandatory):
+                if p.name not in kwargs:
+                    kwargs[p.name] = reply_text
+                    break
+
+        return kwargs
+
+    async def _invoke_validated(
+        self,
+        func: callable,
+        reserved_args: list[Any],
+        reserved_count: int,
+        raw_input: Any = None,
+        reply_text: str | None = None,
+    ) -> None:
+        params = self._get_handler_params(func, reserved_count)
+        kwargs = self._build_handler_kwargs(
+            params=params,
+            raw_input=raw_input,
+            reply_text=reply_text,
+        )
+
+        v_func = validate_call(func, config=pd_config)
+        await v_func(*reserved_args, **kwargs)
+
 
     async def _safe_run_handler(
         self,
@@ -83,19 +172,64 @@ class CallBack:
         wrapped_evt: Any
     ) -> None:
         try:
-            await func(self.mx.interface, wrapped_evt)
+            raw_input = getattr(getattr(wrapped_evt, "content", None), "body", None)
+            if raw_input is None:
+                raw_input = getattr(wrapped_evt, "content", None)
+
+            token = self.mx.interface._current_event.set(wrapped_evt)
+            try:
+                await self._invoke_validated(
+                    func=func,
+                    reserved_args=[self.mx.interface, wrapped_evt],
+                    reserved_count=3,
+                    raw_input=raw_input,
+                )
+            finally:
+                self.mx.interface._current_event.reset(token)
+        except ValidationError as e:
+            logger.debug(
+                f"Validation skipped event handler '{func.__name__}' "
+                f"of module '{mod.name}': {self._extract_validation_message(e)}"
+            )
         except Exception as e:
-            logger.exception(f"Error in event handler '{func.__name__}' of module '{mod.name}': {e}")
+            logger.exception(
+                f"Error in event handler '{func.__name__}' "
+                f"of module '{mod.name}': {e}"
+            )
 
 
     async def _safe_run_watcher(
         self,
         mod: Any,
         func: callable,
-        wrapped_evt: Any
+        wrapped_evt: Any,
+        match: Any = None,
     ) -> None:
         try:
-            await func(self.mx.interface, wrapped_evt)
+            raw_input = getattr(getattr(wrapped_evt, "content", None), "body", None)
+            if match:
+                groups = match.groups()
+                raw_input = (
+                    match.groupdict()
+                    or (groups[0] if len(groups) == 1 else groups)
+                    or match.group(0)
+                )
+
+            token = self.mx.interface._current_event.set(wrapped_evt)
+            try:
+                await self._invoke_validated(
+                    func=func,
+                    reserved_args=[self.mx.interface, wrapped_evt],
+                    reserved_count=3,
+                    raw_input=raw_input,
+                )
+            finally:
+                self.mx.interface._current_event.reset(token)
+        except ValidationError as e:
+            logger.debug(
+                f"Validation skipped watcher '{func.__name__}' "
+                f"of module '{mod.name}': {self._extract_validation_message(e)}"
+            )
         except Exception as e:
             logger.exception(f"Error in watcher '{func.__name__}' of module '{mod.name}': {e}")
 
@@ -110,36 +244,55 @@ class CallBack:
 
         if self.mx.start_time and evt.timestamp < self.mx.start_time:
             return
-        if not evt.content.body or self.mx.should_ignore_event(evt):
-            return
 
+        if evt.type == EventType.ROOM_ENCRYPTED:
+            decrypted_text = await utils.decrypt_event(self.mx, evt)
+            if not decrypted_text:
+                return 
+            
+            evt.content = TextMessageEventContent(
+                msgtype=MessageType.TEXT,
+                body=decrypted_text
+            )
+            evt.type = EventType.ROOM_MESSAGE
+
+        if not getattr(evt.content, "body", None) or self.mx.should_ignore_event(evt):
+            return
+        
         body = evt.content.body.strip()
-        prefixes = await self.mx._db.get("core", "prefix")
+        prefixes = await self.mx.get_prefix()
         prefix = next((p for p in prefixes if body.startswith(p)), None)
 
         wrapped = await self._wrap_event(evt)
-
-
         current_state = self.mx.fsm.get_state(evt)
-
         if current_state:
             if prefix:
                 self.mx.fsm.finish(evt) 
+            else:
                 for mod in self.mx.active_modules.values():
-                    if not mod.enabled: continue
+                    if not mod.enabled:
+                        continue
                     for attr_name in dir(mod):
                         func = getattr(mod, attr_name)
                         if callable(func) and getattr(func, "is_state", False):
                             if getattr(func, "target_state", None) == current_state:
-                                ctx = loader.FSMContext(self.mx.fsm, evt)
-                                asyncio.create_task(func(self.mx.interface, wrapped, ctx))
+                                ctx = FSMContext(self.mx.fsm, evt)
+                                asyncio.create_task(
+                                    self._safe_run_state_handler(
+                                        mod,
+                                        func,
+                                        wrapped,
+                                        ctx,
+                                    )
+                                )
                                 return
-                            
 
         if prefix:
             cmd_payload = body[len(prefix):].strip().split(maxsplit=1)
             if not cmd_payload:
                 return
+
+
 
             cmd_name = cmd_payload[0].lower()
             args_str = cmd_payload[1] if len(cmd_payload) > 1 else ""
@@ -170,41 +323,24 @@ class CallBack:
                     )
                     return
 
-            orig_f = getattr(func, "__func__", func)
-            sig = inspect.signature(orig_f)
-            params = list(sig.parameters.values())[3:]
-            
-            kwargs = {}
-            mandatory = [p for p in params if p.default in (inspect.Parameter.empty, None)]
-            words = args_str.split(maxsplit=len(params)-1) if args_str and params else []
             reply_text = await wrapped.get_reply_text()
 
-            if len(words) == len(mandatory) and not reply_text:
-                for i, p in enumerate(mandatory): kwargs[p.name] = words[i]
-            else:
-                for i, word in enumerate(words):
-                    if i < len(params): kwargs[params[i].name] = word
-
-            if reply_text:
-                for p in reversed(mandatory):
-                    if p.name not in kwargs:
-                        kwargs[p.name] = reply_text
-                        break
-
             try:
-                for p in mandatory:
-                    if p.name not in kwargs or kwargs[p.name] is None:
-                        raise UsageError()
-
-                v_func = validate_call(func, config=pd_config)
                 token = self.mx.interface._current_event.set(wrapped)
                 try:
-                    await v_func(self.mx.interface, wrapped, **kwargs)
+                    await self._invoke_validated(
+                        func=func,
+                        reserved_args=[self.mx.interface, wrapped],
+                        reserved_count=3,
+                        raw_input=args_str,
+                        reply_text=reply_text,
+                    )
                 finally:
                     self.mx.interface._current_event.reset(token)
                 return 
 
             except (ValidationError, UsageError):
+                orig_f = getattr(func, "__func__", func)
                 raw_doc = getattr(orig_f, "__doc__", "") or ""
                 clean = raw_doc.replace("<", "&lt;").replace(">", "&gt;")
 
@@ -220,9 +356,17 @@ class CallBack:
                 continue
             
             for w_func in getattr(mod, "_watchers", []):
-                if w_func.regex.search(body):
+                match = w_func.regex.search(body)
+                if match:
                     if await self.mx.security.check_access(evt.sender, w_func, w_func.__name__):
-                        asyncio.create_task(self._safe_run_watcher(mod, w_func, wrapped))
+                        asyncio.create_task(
+                            self._safe_run_watcher(
+                                mod,
+                                w_func,
+                                wrapped,
+                                match=match,
+                            )
+                        )
 
         await self._dispatch_event(EventType.ROOM_MESSAGE, evt)
 
@@ -263,6 +407,35 @@ class CallBack:
             return
 
         await self._dispatch_event(EventType.ROOM_MEMBER, evt)
+
+    async def _safe_run_state_handler(
+        self,
+        mod: Any,
+        func: callable,
+        wrapped_evt: Any,
+        ctx: FSMContext,
+    ) -> None:
+        try:
+            raw_input = getattr(getattr(wrapped_evt, "content", None), "body", None)
+
+            token = self.mx.interface._current_event.set(wrapped_evt)
+            try:
+                await self._invoke_validated(
+                    func=func,
+                    reserved_args=[self.mx.interface, wrapped_evt, ctx],
+                    reserved_count=4,
+                    raw_input=raw_input,
+                )
+            finally:
+                self.mx.interface._current_event.reset(token)
+        except ValidationError as e:
+            msg = self._extract_validation_message(e)
+            await wrapped_evt.reply(f"❌ <b>Validation:</b> <code>{msg}</code>")
+        except Exception as e:
+            logger.exception(
+                f"Error in state handler '{func.__name__}' "
+                f"of module '{mod.name}': {e}"
+            )
 
         # content = evt.content
         # room_id = evt.room_id
