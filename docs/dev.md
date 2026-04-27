@@ -1,7 +1,11 @@
-Основные директории, на которые стоит смотреть при чтении кода:
+Main directories to look at when reading the code:
 
-- `src/mxuserbot/__main__.py` — запуск бота, web-auth, crypto, регистрация хендлеров.
-- `src/mxuserbot/core/` — базовый framework: loader, utils, security, types, callbacks.
-- `src/mxuserbot/modules/core/` — встроенные core-модули.
-- `src/mxuserbot/modules/community/` — внешние и пользовательские модули.
-- `src/database/` — простая прослойка над хранилищем настроек.
+- `src/mxuserbot/__main__.py` — bot launch, web-auth, crypto, handler registration.
+- `src/mxuserbot/core/` — basic framework: loader, utils, security, types, callbacks.
+- `src/mxuserbot/modules/core/` — built-in core modules.
+- `src/mxuserbot/modules/community/` — external and user modules.
+- `src/database/` — simple layer over settings storage.
+
+If you're reading the project for the first time and want to write modules, start with:
+
+- `docs/module-development/README.md`
