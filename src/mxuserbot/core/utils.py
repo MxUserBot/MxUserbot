@@ -148,7 +148,7 @@ def get_commands(cls) -> dict:
             cmds[method.command_name] = method
     return cmds
 
-2
+
 async def get_reply_text(mx, event: MessageEvent) -> str | None | bool:
     """
     Extracts text from a reply with auto-decryption and key handling.
@@ -337,7 +337,9 @@ async def answer(
     allowed = ["timestamp", "txn_id"]
     matrix_kwargs = {k: v for k, v in kwargs.items() if k in allowed}
 
-    return await mx.client.send_message(room_id, content, **matrix_kwargs)
+    new_event_id = await mx.client.send_message(room_id, content, **matrix_kwargs)
+    
+    return edit_id if edit_id else new_event_id
 
 
 async def request(
