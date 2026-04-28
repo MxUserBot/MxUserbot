@@ -35,9 +35,9 @@ class CallBack:
         self,
         evt: MessageEvent
     ) -> Any:
-        async def reply(text: str, html: bool = True, reply_to= None):
+        async def reply(text: str, html: bool = True):
 
-            event_id = await utils.answer(self.mx.interface, text, html=html, event=evt, edit_id=evt.event_id)
+            event_id = await utils.answer(self.mx.interface, text, html=html, event=evt)
             
             self.mx._ignore_ids.add(event_id)
             
@@ -100,52 +100,54 @@ class CallBack:
             return "Validation error"
 
     def _build_handler_kwargs(
-        self,
-        params: list[inspect.Parameter],
-        raw_input: Any = None,
-        reply_text: str | None = None,
-    ) -> dict[str, Any]:
-        if not params:
-            return {}
+            self,
+            params: list[inspect.Parameter],
+            raw_input: Any = None,
+            reply_text: str | None = None,
+        ) -> dict[str, Any]:
+            if not params:
+                return {}
 
-        kwargs: dict[str, Any] = {}
-        source = raw_input
+            kwargs: dict[str, Any] = {}
+            source = raw_input
 
-        if len(params) == 1:
-            if source in (None, "") and reply_text:
-                source = reply_text
+            if len(params) == 1:
+                if source in (None, "") and reply_text:
+                    source = reply_text
 
-            if source is None:
-                if params[0].default is inspect.Parameter.empty:
-                    kwargs[params[0].name] = ""
+                if source in (None, ""):
+                    if params[0].default is inspect.Parameter.empty:
+                        kwargs[params[0].name] = ""
+                    
+                    return kwargs
+
+                kwargs[params[0].name] = source
                 return kwargs
 
-            kwargs[params[0].name] = source
+
+            if isinstance(source, str):
+                words = source.split(maxsplit=len(params) - 1) if source else []
+            elif source is None:
+                words = []
+            else:
+                words = [source]
+
+            for i, word in enumerate(words):
+                if i < len(params):
+                    kwargs[params[i].name] = word
+
+            if reply_text:
+                mandatory = [
+                    p
+                    for p in params
+                    if p.default in (inspect.Parameter.empty, None)
+                ]
+                for p in reversed(mandatory):
+                    if p.name not in kwargs:
+                        kwargs[p.name] = reply_text
+                        break
+
             return kwargs
-
-        if isinstance(source, str):
-            words = source.split(maxsplit=len(params) - 1) if source else []
-        elif source is None:
-            words = []
-        else:
-            words = [source]
-
-        for i, word in enumerate(words):
-            if i < len(params):
-                kwargs[params[i].name] = word
-
-        if reply_text:
-            mandatory = [
-                p
-                for p in params
-                if p.default in (inspect.Parameter.empty, None)
-            ]
-            for p in reversed(mandatory):
-                if p.name not in kwargs:
-                    kwargs[p.name] = reply_text
-                    break
-
-        return kwargs
 
     async def _invoke_validated(
         self,
