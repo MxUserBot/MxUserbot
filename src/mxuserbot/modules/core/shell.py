@@ -73,13 +73,11 @@ class ShellModule(loader.Module):
         "result": "<b>📟 | Command:</b> <code>{}</code><br><b>📤 | Output:</b><br><code>{}</code>",
         "error": "<b>❌ | Error executing command:</b><br><pre>{}</pre>",
         "timeout": "<b>⏱️ | Command execution timeout (60s)</b>",
-        "sudo_warning": "<b>⚠️ | Команда содержит sudo. Если нужен пароль - настройте NOPASSWD в visudo для этого пользователя.</b>",
     }
 
     @loader.command(security=loader.OWNER)
     async def sh(self, mx, event, payload: ShellPayload):
-        """Execute shell command
-        Usage: .sh <command>
+        """<command>
         in sudo: echo <pass> | sudo S my_command."""
 
         await utils.answer(mx, self.strings.get("executing"))
