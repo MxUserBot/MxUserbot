@@ -1,5 +1,6 @@
 import asyncio
-import html
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ...core import loader, utils
 
@@ -8,7 +9,59 @@ class Meta:
     name = "Shell"
     description = "Execute shell commands"
     version = "1.0.0"
-    tags = ["system", "admin"]
+    tags = ["system"]
+
+
+class ShellPayload(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    command: str = Field(default="", min_length=1)
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_sudo(cls, v):
+        # normalize input
+        if isinstance(v, str):
+            cmd = v.strip()
+            if "sudo" in cmd.split():
+                if "-n" not in cmd.split():
+                    raise ValueError("Command contains sudo; if you need sudo use the -n flag (NOPASSWD) or configure sudoers accordingly")
+            return {"command": cmd}
+        return {"command": ""}
+
+
+class ShellExecutor:
+    TIMEOUT = 60.0
+    MAX_OUTPUT_LENGTH = 4000
+
+    @classmethod
+    async def run(cls, command: str) -> str:
+        process = await asyncio.create_subprocess_shell(
+            command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            stdin=asyncio.subprocess.PIPE,
+        )
+
+        try:
+            process.stdin.close()
+        except Exception:
+            pass
+
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(),
+            timeout=cls.TIMEOUT,
+        )
+
+        output = stdout.decode("utf-8", errors="replace")
+        error = stderr.decode("utf-8", errors="replace")
+
+        result = output if output else error
+        if not result:
+            result = "Command executed successfully (no output)"
+        if len(result) > cls.MAX_OUTPUT_LENGTH:
+            result = result[: cls.MAX_OUTPUT_LENGTH] + "\n... (output truncated)"
+
+        return result
 
 
 @loader.tds
@@ -19,68 +72,28 @@ class ShellModule(loader.Module):
         "executing": "<b>⚙️ | Executing command...</b>",
         "result": "<b>📟 | Command:</b> <code>{}</code><br><b>📤 | Output:</b><br><code>{}</code>",
         "error": "<b>❌ | Error executing command:</b><br><pre>{}</pre>",
-        "no_command": "<b>⚠️ | Please provide a command to execute</b>",
         "timeout": "<b>⏱️ | Command execution timeout (60s)</b>",
         "sudo_warning": "<b>⚠️ | Команда содержит sudo. Если нужен пароль - настройте NOPASSWD в visudo для этого пользователя.</b>",
     }
 
-    @loader.command()
-    async def sh(self, mx, event):
+    @loader.command(security=loader.OWNER)
+    async def sh(self, mx, event, payload: ShellPayload):
         """Execute shell command
-        Usage: .sh <command>"""
-        
-        args = await utils.get_args_raw(mx, event)
-        
-        if not args:
-            await utils.answer(mx, self.strings.get("no_command"))
-            return
-        if 'sudo ' in args or args.startswith('sudo '):
-            if '-n' not in args:
-                await utils.answer(mx, self.strings.get("sudo_warning"))
-                return
-        
-        await utils.answer(mx, self.strings.get("executing"))
-        
-        try:
-            process = await asyncio.create_subprocess_shell(
-                args,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                stdin=asyncio.subprocess.PIPE
-            )
+        Usage: .sh <command>
+        in sudo: echo <pass> | sudo S my_command."""
 
-            process.stdin.close()
-            
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(),
-                    timeout=60.0
-                )
-            except asyncio.TimeoutError:
-                process.kill()
-                await utils.answer(mx, self.strings.get("timeout"))
-                return
-            
-            output = stdout.decode('utf-8', errors='replace')
-            error = stderr.decode('utf-8', errors='replace')
-            
-            result = output if output else error
-            
-            if not result:
-                result = "Command executed successfully (no output)"
-            if len(result) > 4000:
-                result = result[:4000] + "\n... (output truncated)"
-            
-            result_escaped = html.escape(result)
-            command_escaped = html.escape(args)
-            
+        await utils.answer(mx, self.strings.get("executing"))
+
+        try:
+            result = await ShellExecutor.run(payload.command)
+
             await utils.answer(
                 mx,
-                self.strings.get("result").format(command_escaped, result_escaped)
+                self.strings.get("result").format(payload.command, result),
             )
-            
+        except asyncio.TimeoutError:
+            await utils.answer(mx, self.strings.get("timeout"))
+            return
         except Exception as e:
-            await utils.answer(
-                mx,
-                self.strings.get("error").format(html.escape(str(e)))
-            )
+            raise e
+
