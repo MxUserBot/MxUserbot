@@ -78,7 +78,7 @@ class ShellModule(loader.Module):
     @loader.command(security=loader.OWNER)
     async def sh(self, mx, event, payload: ShellPayload):
         """<command>
-        in sudo: echo <pass> | sudo S my_command."""
+        in sudo: echo <pass> | sudo -S my_command."""
 
         await utils.answer(mx, self.strings.get("executing"))
 
