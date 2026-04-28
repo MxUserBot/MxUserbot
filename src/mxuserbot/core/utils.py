@@ -101,10 +101,11 @@ async def decrypt_event(mx, event_to_decrypt: EncryptedEvent, context_event: Mes
     
     return None
 
+
 async def get_reply_event(mx, event: MessageEvent) -> Optional[MessageEvent]:
     """
-    Retrieves the full event object of the message being replied to.
-    Returns the event object or None if no reply or error.
+    Retrieves the full event object of the message being replied to,
+    automatically applying the latest edits if any exist.
     """
     relates = getattr(event.content, "relates_to", None) or getattr(event.content, "_relates_to", None)
     if not relates:
@@ -115,9 +116,57 @@ async def get_reply_event(mx, event: MessageEvent) -> Optional[MessageEvent]:
         return None
 
     try:
-        return await mx.client.get_event(event.room_id, reply_to.event_id)
+        replied_event = await mx.client.get_event(event.room_id, reply_to.event_id)
+        
+        try:
+            url = f"{mx.client.api.base_url}/_matrix/client/v1/rooms/{event.room_id}/relations/{reply_to.event_id}/m.replace"
+            headers = {"Authorization": f"Bearer {mx.client.api.token}"}
+            
+            async with mx.client.api.session.get(url, headers=headers) as res:
+                if res.status == 200:
+                    data = await res.json()
+                    events = data.get("chunk",[])
+                    
+                    if events:
+                        latest_edit = max(events, key=lambda x: x.get("origin_server_ts", 0))
+                        
+                        new_content = latest_edit.get("content", {}).get("m.new_content")
+                        
+                        if new_content:
+                            replied_event.content.body = new_content.get("body", replied_event.content.body)
+                            
+                            if "formatted_body" in new_content:
+                                replied_event.content.formatted_body = new_content["formatted_body"]
+                                replied_event.content.format = new_content.get("format")
+        except Exception:
+            pass
+            
+        return replied_event
     except Exception:
         return None
+
+
+async def get_reply_text(mx, event: MessageEvent) -> str | None | bool:
+    """
+    Extracts text from a reply with auto-decryption and key handling.
+    Returns:
+    - str (text) if successful
+    - False if there is no reply
+    - None if the key is missing or an error occurred
+    """
+    reply_to = getattr(event.content, "relates_to", None)
+    if not reply_to or getattr(reply_to, "in_reply_to", None) is None:
+        return False
+        
+    try:
+        replied_event = await get_reply_event(mx, event)
+        if not replied_event:
+            raise Exception("Событие не найдено")
+    except Exception as e:
+        await answer(mx, text=f"❌ <b>Не удалось скачать сообщение:</b> {e}", event=event)
+        return None
+
+    return getattr(replied_event.content, "body", "")
 
 
 def get_platform() -> str:
@@ -147,28 +196,6 @@ def get_commands(cls) -> dict:
         if callable(method) and getattr(method, "is_command", False):
             cmds[method.command_name] = method
     return cmds
-
-
-async def get_reply_text(mx, event: MessageEvent) -> str | None | bool:
-    """
-    Extracts text from a reply with auto-decryption and key handling.
-    Returns:
-    - str (text) if successful
-    - False if there is no reply
-    - None if the key is missing or an error occurred
-    """
-    reply_to = getattr(event.content, "relates_to", None)
-    if not reply_to or getattr(reply_to, "in_reply_to", None) is None:
-        return False
-        
-    try:
-        replied_event = await mx.client.get_event(event.room_id, reply_to.in_reply_to.event_id)
-    except Exception as e:
-        await answer(mx, text=f"❌ <b>Не удалось скачать сообщение:</b> {e}", event=event)
-        return None
-        
-
-    return getattr(replied_event.content, "body", "")
 
 
 async def get_args_raw(mx, event) -> str:
