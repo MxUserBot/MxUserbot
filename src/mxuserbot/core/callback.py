@@ -33,10 +33,11 @@ class CallBack:
 
     async def _wrap_event(
         self,
-        evt: Any
+        evt: MessageEvent
     ) -> Any:
-        async def reply(text: str, html: bool = True):
-            event_id = await utils.answer(self.mx.interface, text, html=html, event=evt)
+        async def reply(text: str, html: bool = True, reply_to= None):
+
+            event_id = await utils.answer(self.mx.interface, text, html=html, event=evt, edit_id=evt.event_id)
             
             self.mx._ignore_ids.add(event_id)
             
