@@ -65,30 +65,6 @@ def setup_routes(
     app.include_router(build_routers(deps, auth_event))
 
 
-async def run_web_server(mx, port: int):
-    public_url = await get_public_url(port)
-    if public_url:
-        print(f"🌐 Public URL: {public_url}")
-    if "SHARKHOST" in os.environ or "DOCKER" in os.environ:
-        host = '0.0.0.0'
-    else:
-        host = '127.0.0.1'
-
-
-    app = FastAPI(title="Sekai Bot API")
-    setup_routes(app, mx, mx.auth_completed)
-    server = uvicorn.Server(uvicorn.Config(app, host=host, port=8000, log_level="error"))
-    server.install_signal_handlers = lambda: None
-    async def _serve_api():
-        try:
-            await server.serve()
-        except (KeyboardInterrupt, asyncio.CancelledError):
-            pass
-            
-    api_task = asyncio.create_task(_serve_api())
-    mx.log.info(f"🌐 | API running: http://{server.config.host}:{server.config.port}")
-
-
 def ensure_ssh():
     try:
         result = subprocess.run(['ssh', '-V'], capture_output=True, text=True)
@@ -100,8 +76,62 @@ def ensure_ssh():
     except Exception as e:
         print(f"❌ Error checking SSH: {e}")
         return False
+
+async def run_web_server(mx, port: int):
+    # Достаем значение из базы
+    db_host = await mx._db.get("core", "host")
+
+    # По умолчанию для локалки
+    if "SHARKHOST" in os.environ or "DOCKER" in os.environ:
+        bind_host = '0.0.0.0'
+    else:
+        bind_host = '127.0.0.1'
+
+    public_url = None
+
+    if db_host == "localhost":
+        public_url = f"http://127.0.0.1:{port}"
+        bind_host = "127.0.0.1"
+        
+    elif db_host == "0.0.0.0":
+        public_url = f"http://0.0.0.0:{port}"
+        bind_host = "0.0.0.0"
+        
+    elif db_host == "tunnel" or not db_host:
+        mx.log.info("🌐 | Starting SSH tunnel...")
+        tunnel_url = await get_public_url(port=port)
+        if tunnel_url:
+            public_url = tunnel_url
+        else:
+            public_url = f"http://{bind_host}:{port}"
+            
+    else:
+        public_url = db_host
+
+    app = FastAPI(title="Sekai Bot API")
+    setup_routes(app, mx, mx.auth_completed)
     
+    server = uvicorn.Server(
+        uvicorn.Config(
+            app,
+            host=bind_host,
+            port=port,
+            log_level="error"
+        )
+    )
+    server.install_signal_handlers = lambda: None
     
+    async def _serve_api():
+        try:
+            await server.serve()
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            pass
+            
+    asyncio.create_task(_serve_api())
+    mx.log.info(f"🌐 | API local URL: http://{bind_host}:{port}")
+    mx.log.info(f"🚀 | API Public URL: {public_url}")
+
+
 async def get_public_url(port: int):
     if not ensure_ssh():
         return None
@@ -111,7 +141,6 @@ async def get_public_url(port: int):
         os.remove(localhost_run_output_file)
 
     try:      
-
         subprocess.Popen(
             f'ssh -o StrictHostKeyChecking=no -R 80:localhost:{port} nokey@localhost.run > {localhost_run_output_file} 2>&1 &',
             shell=True,
@@ -129,7 +158,8 @@ async def get_public_url(port: int):
                         if "tunneled with tls termination" in line:
                             url = line.split()[-1]
                             return url
-            time.sleep(1) 
+            await asyncio.sleep(1)
+            
         print("⏰ Timeout reached, no URL found")
         return None 
     except Exception as e:

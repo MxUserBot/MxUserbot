@@ -24,3 +24,9 @@ class SystemService:
             self.mx._prefixes = [prefix]
 
         return {"status": "ok", "prefix": prefix}
+
+
+    async def change_host(self, host: str) -> dict[str, str]:
+        await self.mx._db.set("core", "host", host)
+
+        return {"status": "ok", "host": host}

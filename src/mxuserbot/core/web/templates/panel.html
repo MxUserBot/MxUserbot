@@ -80,7 +80,26 @@
         </div>
 
         <div v-if="view === 'set'" class="view-fade space-y-6">
+
             <div>
+
+    <!-- НАЧАЛО НОВОГО БЛОКА: API Host Mode -->
+                <div class="border-t border-[#27272a] pt-4">
+                    <h2 class="text-sm font-semibold text-[#a1a1aa] mb-3">API Host Mode</h2>
+                    <div class="flex gap-2">
+                        <select v-model="currentHostMode" class="w-full p-2 bg-[#09090b] border border-[#27272a] rounded-md text-sm outline-none focus:border-emerald-900 transition-colors text-white">
+                            <option value="tunnel">Public Tunnel (localhost.run)</option>
+                            <option value="localhost">Local Network (localhost)</option>
+                            <option value="0.0.0.0">Docker / External IP (0.0.0.0)</option>
+                        </select>
+                        <button @click="updateHost" :disabled="hostSaving" class="px-4 bg-emerald-900/80 text-emerald-100 border border-emerald-800/50 rounded-md text-xs font-semibold hover:bg-emerald-800 disabled:opacity-50 transition-colors whitespace-nowrap">
+                            {{ hostSaving ? 'Saving...' : 'Apply' }}
+                        </button>
+                    </div>
+                    <p class="text-[10px] text-[#52525b] mt-2">Changes require a full bot restart to take effect.</p>
+                </div>
+                <!-- КОНЕЦ НОВОГО БЛОКА -->
+
                 <h2 class="text-sm font-semibold text-[#a1a1aa] mb-3">System</h2>
                 <div class="grid grid-cols-3 gap-3">
                     <div class="bg-[#09090b] border border-[#27272a] rounded p-3 text-center">

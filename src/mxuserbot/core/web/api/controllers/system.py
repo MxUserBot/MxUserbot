@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 
 from ..context import APIContext
 from ..dependencies import APIDependencies
-from ..schemas import PrefixRequest
+from ..schemas import PrefixRequest, HostRequest
 
 
 class SystemController:
@@ -27,9 +27,20 @@ class SystemController:
             dependencies=auth_dependencies,
             tags=["System"],
         )
+        router.add_api_route(
+            "/api/config/host",
+            self.change_host,
+            methods=["POST"],
+            dependencies=auth_dependencies,
+            tags=["System"],
+        )
 
     async def get_status(self):
         return await self.context.system_service.get_status()
 
     async def change_prefix(self, data: PrefixRequest):
         return await self.context.system_service.change_prefix(data.prefix)
+    
+    async def change_host(self, data: HostRequest):
+        return await self.context.system_service.change_host(data.host)
+        

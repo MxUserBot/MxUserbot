@@ -1,6 +1,5 @@
 import re
-from typing import Any, Dict
-
+from typing import Any, Dict, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -40,3 +39,9 @@ class UninstallRequest(BaseModel):
 
 class PrefixRequest(BaseModel):
     prefix: str = Field(..., min_length=1, max_length=1)
+
+class HostRequest(BaseModel):
+    host: Literal["localhost", "tunnel", "0.0.0.0"] = Field(
+        ...,
+        description="API Mode"
+    )

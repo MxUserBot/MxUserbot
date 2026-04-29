@@ -8,7 +8,7 @@ createApp({
         const processing = ref(null);
         const errors = ref({}); 
         
-        const stats = ref({ modules_count: 0, api_status: 'Stable', version: '?.?.?' });
+        const stats = ref({ modules_count: 0, api_status: 'Stable', version: '?.?.?', host_mode: "tunnel" });
         const searchQuery = ref('');
         const searchResults = ref([]);
         const installedModules = ref([]);
@@ -18,13 +18,44 @@ createApp({
         const repoLoading = ref(false);
 
         const cfgModal = ref({ open: false, loading: false, saving: false, moduleId: '', modName: '', schema:[], msg: '' });
+        
+        // Переменные для хоста
+        const currentHostMode = ref('tunnel');
+        const hostSaving = ref(false);
 
+        // ПРАВИЛЬНЫЙ fetchStatus: читает статус и обновляет выпадающий список
         const fetchStatus = async () => {
             try {
                 const res = await fetch('/api/status');
                 if (res.status === 401) window.location.href = '/';
-                stats.value = await res.json();
+                const data = await res.json();
+                stats.value = data;
+                
+                // Синхронизируем выпадающий список с базой данных
+                if (data.host_mode) {
+                    currentHostMode.value = data.host_mode;
+                }
             } catch (e) {}
+        };
+
+        const updateHost = async () => {
+            hostSaving.value = true;
+            try {
+                const res = await fetch('/api/config/host', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ host: currentHostMode.value })
+                });
+                
+                if (res.ok) {
+                    alert("✅ Host mode updated! Restart the bot to apply changes.");
+                } else {
+                    alert("❌ Failed to update host mode. Validation error.");
+                }
+            } catch (e) {
+                alert("❌ Network Error");
+            }
+            hostSaving.value = false;
         };
 
         const fetchInstalled = async () => {
@@ -146,10 +177,8 @@ createApp({
             cfgModal.value.saving = false;
         };
 
-                // Спокойный акцент для кнопок навигации (верхних)
         const btnClass = (active) => `px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${active ? 'bg-[#27272a] text-blue-400' : 'text-[#a1a1aa] hover:text-white hover:bg-[#18181b]'}`;
 
-        // Приглушенно-синяя линия для активных вкладок (Installed / Market)
         const tabClass = (active) => `text-xs font-semibold pb-1 transition-colors border-b-2 ${active ? 'text-blue-400 border-blue-400' : 'text-[#71717a] border-transparent hover:text-[#a1a1aa]'}`;
 
         const currentModList = computed(() => modTab.value === 'installed' ? installedModules.value : searchResults.value);
@@ -159,8 +188,6 @@ createApp({
 
         onMounted(() => { fetchStatus(); fetchInstalled(); setInterval(fetchStatus, 15000); });
 
-        return { view, modTab, loading, processing, stats, searchQuery, currentModList, btnClass, tabClass, searchModules, toggleModule, cfgModal, openConfig, closeConfig, saveConfig, errors, repos, newRepo, repoLoading, addRepo, removeRepo };
+        return { view, modTab, loading, processing, stats, searchQuery, currentModList, btnClass, tabClass, searchModules, toggleModule, cfgModal, openConfig, closeConfig, saveConfig, errors, repos, newRepo, repoLoading, addRepo, removeRepo, updateHost, currentHostMode, hostSaving };
     }
-
-
 }).mount('#app');
