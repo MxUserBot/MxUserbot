@@ -3,8 +3,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator, ConfigDict
 from mautrix.types import MessageEvent
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ...core import loader, utils
 

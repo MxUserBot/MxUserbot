@@ -1,7 +1,6 @@
 import asyncio
 import base64
 import contextlib
-from dataclasses import dataclass
 import hashlib
 import json
 import logging
@@ -10,7 +9,8 @@ import time
 import typing
 import uuid
 from abc import ABC
-from typing import Any, AsyncGenerator, Dict, Optional, Callable
+from dataclasses import dataclass
+from typing import Any, AsyncGenerator, Callable, Dict, Optional
 
 from loguru import logger
 from mautrix.client import Client
@@ -19,8 +19,8 @@ from mautrix.crypto.store import MemoryCryptoStore as BaseMemoryCryptoStore
 from mautrix.types import (
     CrossSigningUsage,
     EventType,
-    TOFUSigningKey,
     ToDeviceEvent,
+    TOFUSigningKey,
     TrustState,
 )
 from mautrix.util.config import BaseFileConfig, ConfigUpdateHelper, RecursiveDict
@@ -28,8 +28,6 @@ from olm.sas import Sas
 from ruamel.yaml.comments import CommentedMap
 
 from . import utils
-
-
 
 EMOJI_LIST =[
     "Dog", "Cat", "Lion", "Horse", "Unicorn", "Pig", "Elephant", 
@@ -46,6 +44,7 @@ EMOJI_LIST =[
 
 
 import asyncio
+
 
 class ModuleConfig:
     def __init__(self, getter_func, setter_func, schema: dict):
@@ -581,7 +580,7 @@ class BotSASVerification:
                         if self.client.mxid not in full_keys.signatures:
                             full_keys.signatures[self.client.mxid] = {}
                         
-                        from mautrix.types import KeyID, CrossSigner
+                        from mautrix.types import CrossSigner, KeyID
                         bot_key_id = KeyID.ed25519(self.client.device_id)
                         full_keys.signatures[self.client.mxid][bot_key_id] = signature
                         

@@ -4,7 +4,6 @@ from .modules import ModuleService
 from .repos import RepoService
 from .system import SystemService
 
-
 __all__ = [
     "AuthService",
     "LocaleService",

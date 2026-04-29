@@ -1,11 +1,10 @@
 import json
 from pathlib import Path
-from loguru import logger
 from typing import Any
 
+from loguru import logger
+
 from ..constants import LOCALE_PATH
-
-
 
 EMPTY_LOCALE = {"en": {}, "ru": {}}
 

@@ -2,9 +2,8 @@ import logging
 from typing import Any
 
 from fastapi import HTTPException, Request
-
-
 from loguru import logger
+
 
 class APIDependencies:
     def __init__(self, mx: Any) -> None:

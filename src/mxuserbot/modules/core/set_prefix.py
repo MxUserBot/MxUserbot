@@ -1,6 +1,9 @@
 from typing import Any
+
 from mautrix.types import MessageEvent
+
 from ...core import loader, utils
+
 
 class Meta:
     name = "PrefixModule"

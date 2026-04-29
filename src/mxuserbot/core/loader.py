@@ -1,26 +1,24 @@
+import asyncio
+import hashlib
+import importlib.util
+import inspect
+import json
 import re
 import sys
-import json
 import time
 import typing
-import inspect
-import hashlib
-import asyncio
-import importlib.util
-from pathlib import Path
-from functools import wraps
 from dataclasses import dataclass
-from typing import List, Optional, Dict, Any
+from functools import wraps
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 from mautrix.crypto.attachments import decrypt_attachment
-from mautrix.types import MessageType, EncryptedEvent, EventType
+from mautrix.types import EncryptedEvent, EventType, MessageType
 
 from . import utils
-from .security import ScopedDatabase
-from .types import Module, ConfigValue # для удобства импорта
-from .security import SUDO, OWNER, EVERYONE
-
+from .security import EVERYONE, OWNER, SUDO, ScopedDatabase
+from .types import ConfigValue, Module  # для удобства импорта
 
 _MODULE_NAME_BY_HASH: typing.Dict[str, str] = {}
 
@@ -537,6 +535,7 @@ class RepoManager:
 
     async def install(self, target: str) -> bool:
             import ast
+
             import aiohttp
             
             url, source = await self.resolve_and_download(target)

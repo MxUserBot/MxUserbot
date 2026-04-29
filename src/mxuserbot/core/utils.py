@@ -1,38 +1,35 @@
 import asyncio
 import io
 import os
-from pathlib import Path
 import platform
 import shlex
 import time
+from pathlib import Path
 from typing import Optional, Union
 
-from PIL import Image
 import aiohttp
-from loguru import logger
 import psutil
-
+from loguru import logger
 from mautrix.api import Method
 from mautrix.crypto.attachments import encrypt_attachment
 from mautrix.types import (
     EncryptedEvent,
     EventType,
     Format,
-    RoomTagInfo,
     ImageInfo,
     MediaMessageEventContent,
     MessageEvent,
     MessageType,
     RelatesTo,
     RelationType,
+    RoomTagInfo,
     TextMessageEventContent,
     ThumbnailInfo,
-    MediaMessageEventContent
 )
 from mautrix.util.formatter import parse_html
+from PIL import Image
 
 from .types import Image
-
 
 RPC_NAMESPACE = "com.ip-logger.msc4320.rpc"
 COMM_DIR = Path(__file__).resolve().parents[1] / "modules" / "community"

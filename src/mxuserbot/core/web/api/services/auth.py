@@ -1,18 +1,16 @@
-import os
 import asyncio
+import os
 from typing import Any
 
 from loguru import logger
 from mautrix.api import HTTPAPI
 from mautrix.client import Client
 from mautrix.crypto import OlmMachine
-from mautrix.util.async_db import Database as MautrixDatabase
 from mautrix.crypto.store.asyncpg import PgCryptoStateStore, PgCryptoStore
+from mautrix.util.async_db import Database as MautrixDatabase
 
-from ..schemas import LoginSchema
 from ..constants import CRYPTO_DB_FILENAME, CRYPTO_PICKLE_KEY
-
-
+from ..schemas import LoginSchema
 
 
 class AuthService:

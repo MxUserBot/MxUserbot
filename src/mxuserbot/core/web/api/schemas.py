@@ -1,7 +1,7 @@
 import re
 from typing import Any, Dict, Literal
-from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 MXID_PATTERN = re.compile(r"^@[\w.\-]+:[\w.\-]+\.[a-zA-Z]{2,}$")
 

@@ -1,26 +1,24 @@
-import inspect
 import asyncio
+import inspect
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ..__main__ import MXUserBot
 
 from loguru import logger
-from pydantic import validate_call, ValidationError, ConfigDict
-
 from mautrix.types import (
-    StateEvent, 
-    MessageEvent, 
-    Membership, 
     EventType,
+    Membership,
+    MessageEvent,
+    MessageType,
+    StateEvent,
     TextMessageEventContent,
-    MessageType
 )
+from pydantic import ConfigDict, ValidationError, validate_call
 
 from . import utils
-from .types import FSMContext
 from .exceptions import UsageError
-
+from .types import FSMContext
 
 pd_config = ConfigDict(arbitrary_types_allowed=True)
 join_on_invite = True

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 
 from ..context import APIContext
 from ..dependencies import APIDependencies
-from ..schemas import PrefixRequest, HostRequest
+from ..schemas import HostRequest, PrefixRequest
 
 
 class SystemController:

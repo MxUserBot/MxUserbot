@@ -1,5 +1,7 @@
-from ...core import utils, loader
 from mautrix.types import MessageEvent, TrustState
+
+from ...core import loader, utils
+
 
 class Meta:
     name = "VerifierModule"

@@ -1,8 +1,10 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from .methods import Database
+
 from .__main__ import Base
+from .methods import Database
+
 
 class AsyncSessionWrapper:
     def __init__(self, url="sqlite+aiosqlite:///sekai.db"):

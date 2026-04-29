@@ -1,7 +1,7 @@
 from typing import Any
 
 from mautrix.types import ImageInfo, MessageEvent
-from pydantic import BaseModel, Field, model_validator, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ...core import loader, utils
 

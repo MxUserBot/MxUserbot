@@ -1,12 +1,10 @@
-import sys
 import ast
+import sys
 import time
 from functools import wraps
 
 from loguru import logger
-
 from mautrix.errors import MatrixConnectionError
-
 
 OWNER = 1 << 0       
 SUDO = 1 << 1        

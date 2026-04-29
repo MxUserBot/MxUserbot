@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 API_DIR = Path(__file__).resolve().parent
 WEB_DIR = API_DIR.parent
 TEMPLATES_DIR = WEB_DIR / "templates"
