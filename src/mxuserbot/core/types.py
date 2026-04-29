@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import contextlib
+from dataclasses import dataclass
 import hashlib
 import json
 import logging
@@ -712,3 +713,20 @@ class FSMContext:
         self
     ) -> None:
         self._manager.finish(self._event)
+
+
+@dataclass
+class Image:
+    url: str | bytes
+    w: int | None = None
+    h: int | None = None
+    mimetype: str = "image/png"
+    filename: str = "image.png"
+    size: int | None = None
+
+    def to_info(self) -> dict:
+        info = {"mimetype": self.mimetype}
+        if self.w: info["w"] = self.w
+        if self.h: info["h"] = self.h
+        if self.size: info["size"] = self.size
+        return info
