@@ -247,15 +247,11 @@ class CallBack:
             return
 
         if evt.type == EventType.ROOM_ENCRYPTED:
-            decrypted_text = await utils.decrypt_event(self.mx, evt)
-            if not decrypted_text:
+            success = await utils.decrypt_event(self.mx, evt)
+            
+            if not success:
                 return 
             
-            evt.content = TextMessageEventContent(
-                msgtype=MessageType.TEXT,
-                body=decrypted_text
-            )
-            evt.type = EventType.ROOM_MESSAGE
 
         if not getattr(evt.content, "body", None) or self.mx.should_ignore_event(evt):
             return
