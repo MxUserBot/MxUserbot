@@ -27,8 +27,11 @@ from mautrix.types import (
     RelationType,
     TextMessageEventContent,
     ThumbnailInfo,
+    MediaMessageEventContent
 )
 from mautrix.util.formatter import parse_html
+
+from .types import Image
 
 
 RPC_NAMESPACE = "com.ip-logger.msc4320.rpc"
@@ -54,59 +57,55 @@ async def fetch_room_messages(
     )
 
 
-async def decrypt_event(mx, event_to_decrypt: EncryptedEvent, context_event: MessageEvent = None) -> str | None:
+async def decrypt_event(
+    mx,
+    event: MessageEvent,
+    context_event: MessageEvent = None
+) -> bool:
+    if event.type != EventType.ROOM_ENCRYPTED:
+        return True
+
     try:
-        decrypted = await mx.client.crypto.decrypt_megolm_event(event_to_decrypt)
-        return decrypted.content.body
-    except :
+        decrypted = await mx.client.crypto.decrypt_megolm_event(event)
+        event.content = decrypted.content
+        event.type = decrypted.type
+        return True
+    except:
         pass
 
-    users_to_ask = {mx.client.mxid, event_to_decrypt.sender}
+    users_to_ask = {mx.client.mxid, event.sender}
     from_devices = {}
-    
     for user_id in users_to_ask:
         devices = await mx.client.crypto.crypto_store.get_devices(user_id)
         if devices:
             from_devices[user_id] = {dev_id: dev.identity_key for dev_id, dev in devices.items()}
 
-    if not from_devices:
-        if context_event:
-            await answer(mx, "❌ | <b>Decryption failed:</b> No trusted devices found to ask for keys.", event=context_event)
-            return
-        return None
+    if from_devices:
+        task = asyncio.create_task(mx.client.crypto.request_room_key(
+            room_id=event.room_id,
+            sender_key=event.content.sender_key,
+            session_id=event.content.session_id,
+            from_devices=from_devices
+        ))
+        _CRYPTO_BACKGROUND_TASKS.add(task)
+        task.add_done_callback(_CRYPTO_BACKGROUND_TASKS.discard)
 
-    task = asyncio.create_task(mx.client.crypto.request_room_key(
-        room_id=event_to_decrypt.room_id,
-        sender_key=event_to_decrypt.content.sender_key,
-        session_id=event_to_decrypt.content.session_id,
-        from_devices=from_devices
-    ))
-    _CRYPTO_BACKGROUND_TASKS.add(task)
-    task.add_done_callback(_CRYPTO_BACKGROUND_TASKS.discard)
-
-    if context_event:
-        await answer(mx, "🔑 | <b>Missing key.</b> Requesting from your other devices... Please wait..", event=context_event)
-
-    for attempt in range(2):
-        await asyncio.sleep(2)
-        try:
-            decrypted = await mx.client.crypto.decrypt_megolm_event(event_to_decrypt)
-            return decrypted.content.body
-        except :
-            continue
-            
-    if context_event:
-        await answer(mx, "❌ | <b>Timeout:</b> Key not received.", event=context_event)
-        return
-    
-    return None
+        for _ in range(2):
+            await asyncio.sleep(2)
+            try:
+                decrypted = await mx.client.crypto.decrypt_megolm_event(event)
+                event.content = decrypted.content
+                event.type = decrypted.type
+                return True
+            except:
+                continue
+    return False
 
 
-async def get_reply_event(mx, event: MessageEvent) -> Optional[MessageEvent]:
-    """
-    Retrieves the full event object of the message being replied to,
-    automatically applying the latest edits if any exist.
-    """
+async def get_reply_event(
+    mx,
+    event: MessageEvent
+) -> Optional[MessageEvent]:
     relates = getattr(event.content, "relates_to", None) or getattr(event.content, "_relates_to", None)
     if not relates:
         return None
@@ -118,6 +117,8 @@ async def get_reply_event(mx, event: MessageEvent) -> Optional[MessageEvent]:
     try:
         replied_event = await mx.client.get_event(event.room_id, reply_to.event_id)
         
+        await decrypt_event(mx, replied_event)
+        
         try:
             url = f"{mx.client.api.base_url}/_matrix/client/v1/rooms/{event.room_id}/relations/{reply_to.event_id}/m.replace"
             headers = {"Authorization": f"Bearer {mx.client.api.token}"}
@@ -125,19 +126,24 @@ async def get_reply_event(mx, event: MessageEvent) -> Optional[MessageEvent]:
             async with mx.client.api.session.get(url, headers=headers) as res:
                 if res.status == 200:
                     data = await res.json()
-                    events = data.get("chunk",[])
+                    chunks = data.get("chunk", [])
                     
-                    if events:
-                        latest_edit = max(events, key=lambda x: x.get("origin_server_ts", 0))
+                    if chunks:
+                        latest_dict = max(chunks, key=lambda x: x.get("origin_server_ts", 0))
                         
-                        new_content = latest_edit.get("content", {}).get("m.new_content")
-                        
+                        latest_edit_event = MessageEvent.deserialize(latest_dict)
+
+                        await decrypt_event(mx, latest_edit_event)
+
+                        content = latest_edit_event.content
+                        new_content = getattr(content, "new_content", None)
+                        if not new_content and isinstance(content, dict):
+                            new_content = content.get("m.new_content")
+
                         if new_content:
-                            replied_event.content.body = new_content.get("body", replied_event.content.body)
-                            
-                            if "formatted_body" in new_content:
-                                replied_event.content.formatted_body = new_content["formatted_body"]
-                                replied_event.content.format = new_content.get("format")
+                            new_body = getattr(new_content, "body", None) or new_content.get("body")
+                            if new_body:
+                                replied_event.content.body = new_body
         except Exception:
             pass
             
@@ -299,14 +305,14 @@ async def pin(mx, room_id: str, event_id: str, unpin: bool = False):
 
 async def answer(
     mx,
-    text: str,
+    text: str = None,
+    image: Image = None,
     html: bool = True,
     room_id: str = None,
     event: MessageEvent = None,
     edit_id: str | None = -1,
     **kwargs
 ) -> str:
-    """Sends or edits a message in the specified Matrix room."""
     ctx_event = None
     if hasattr(mx, "_current_event"):
         try:
@@ -334,39 +340,87 @@ async def answer(
     if not room_id:
         logger.error("utils.answer() called without room_id and context!")
         return ""
+    ctx_event = None
+    if hasattr(mx, "_current_event"):
+        try:
+            ctx_event = mx._current_event.get()
+        except Exception: pass
 
-    plain_text = await parse_html(text) if html else text
-    
-    if edit_id:
-        content = TextMessageEventContent(
-            msgtype=MessageType.TEXT,
-            body=f" * {plain_text}",
-            relates_to=RelatesTo(rel_type=RelationType.REPLACE, event_id=edit_id)
-        )
-        if html:
-            content.format = Format.HTML
-            content.formatted_body = text
+    target_event = event or ctx_event
+    if not room_id:
+        room_id = target_event.room_id if target_event else None
+    if edit_id == -1:
+        edit_id = target_event.event_id if target_event and target_event.sender == mx.client.mxid else None
+
+    if not room_id:
+        logger.error("utils.answer() called without room_id and context!")
+        return ""
+
+    if image and isinstance(image.url, bytes):
+        if not image.size:
+            image.size = len(image.url)
             
-        content.new_content = TextMessageEventContent(
-            msgtype=MessageType.TEXT,
-            body=plain_text,
-            format=Format.HTML if html else None,
-            formatted_body=text if html else None
+        mxc_url = await mx.client.upload_media(
+            data=image.url,
+            mime_type=image.mimetype,
+            filename=image.filename
         )
+        image.url = mxc_url
+
+    body_text = text or ("image.png" if image else "")
+    formatted_text = text if (html and text) else None
+
+    if not edit_id:
+        if image:
+            content = {
+                "msgtype": "m.image",
+                "body": body_text,
+                "url": image.url,
+                "info": image.to_info()
+            }
+        else:
+            content = {
+                "msgtype": "m.text",
+                "body": await parse_html(body_text) if html else body_text,
+            }
+            if formatted_text:
+                content["format"] = "org.matrix.custom.html"
+                content["formatted_body"] = formatted_text
     else:
-        content = TextMessageEventContent(
-            msgtype=MessageType.TEXT,
-            body=plain_text,
-            format=Format.HTML if html else None,
-            formatted_body=text if html else None
-        )
+        content = {
+            "msgtype": "m.text",
+            "body": f" * {body_text}",
+            "m.relates_to": {
+                "rel_type": "m.replace",
+                "event_id": edit_id
+            }
+        }
+        
+        if image:
+            content["m.new_content"] = {
+                "msgtype": "m.image",
+                "body": body_text,
+                "url": image.url,
+                "info": image.to_info()
+            }
+        else:
+            new_content = {
+                "msgtype": "m.text",
+                "body": body_text,
+            }
+            if formatted_text:
+                new_content["format"] = "org.matrix.custom.html"
+                new_content["formatted_body"] = formatted_text
+            content["m.new_content"] = new_content
 
-    allowed = ["timestamp", "txn_id"]
-    matrix_kwargs = {k: v for k, v in kwargs.items() if k in allowed}
-
-    new_event_id = await mx.client.send_message(room_id, content, **matrix_kwargs)
+    res = await mx.client.send_message_event(
+        room_id=room_id,
+        event_type=EventType.ROOM_MESSAGE,
+        content=content,
+        txn_id=kwargs.get("txn_id")
+    )
     
-    return edit_id if edit_id else new_event_id
+    return edit_id if edit_id else res
 
 
 async def request(
