@@ -1,5 +1,7 @@
 import asyncio
 import io
+import re
+import unicodedata
 import os
 import platform
 import shlex
@@ -627,6 +629,24 @@ def escape_html(text: str, /) -> str:
 def escape_quotes(text: str, /) -> str:
     """Escape quotes to their corresponding HTML entities."""
     return escape_html(text).replace('"', "&quot;")
+
+
+def normalize_text(text: str) -> str:
+    if not text:
+        return ""
+
+    text = re.sub(r'<[^>]+>', '', text)
+
+    allowed_extra = "., \n-()[]{}\"'«»„“:@"
+
+    cleaned = "".join(
+        c for c in text 
+        if c.isalnum() or c in allowed_extra
+    )
+
+    cleaned = re.sub(r' +', ' ', cleaned)
+    
+    return cleaned.strip()
 
 
 def get_base_dir() -> str:
