@@ -252,7 +252,6 @@ class MXUserBot(Program):
 
     def prepare(self) -> None:
         super().prepare()
-        self.add_startup_actions(self.run_api())
         self.add_startup_actions(self.setup_userbot())
 
 
@@ -265,8 +264,9 @@ class MXUserBot(Program):
         self
     ) -> None:
         try:
-            await self._init_database()
             
+            await self._init_database()
+            await self.run_api()
             token = await self._get_core_conf("access_token")
             if not token:
                 self.log.warning("🔑 | auth not found. Please auth.")
