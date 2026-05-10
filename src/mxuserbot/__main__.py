@@ -89,7 +89,7 @@ class MXBotInterface:
 
 
     @property
-    def security(self) -> MXUS: # <--- ДОБАВЬ ВОТ ЭТО
+    def security(self) -> MXUS:
         return self._bot.security
 
     @property
