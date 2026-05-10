@@ -1,0 +1,38 @@
+# ©️ Pasha Hatsune, 2025-2026
+# This file is a part of MXUserbot
+# 🌐 https://github.com/MxUserBot/MXUserbot
+# You can redistribute it and/or modify it under the terms of the GNU AGPLv3
+# 🔑 https://www.gnu.org/licenses/agpl-3.0.html
+
+from typing import Any
+
+
+class SystemService:
+    def __init__(self, mx: Any) -> None:
+        self.mx = mx
+
+    async def is_authenticated(self) -> bool:
+        return bool(await self.mx._db.get("core", "access_token"))
+
+
+    async def get_status(self) -> dict[str, Any]:
+        return {
+            "status": "ONLINE",
+            "modules_count": len(self.mx.active_modules),
+            "version": getattr(self.mx, "version", "3.0.0"),
+            "start_time": getattr(self.mx, "start_time", 0),
+        }
+
+
+    async def change_prefix(self, prefix: str) -> dict[str, str]:
+        await self.mx._db.set("core", "prefix", [prefix])
+        if hasattr(self.mx, "_prefixes"):
+            self.mx._prefixes = [prefix]
+
+        return {"status": "ok", "prefix": prefix}
+
+
+    async def change_host(self, host: str) -> dict[str, str]:
+        await self.mx._db.set("core", "host", host)
+
+        return {"status": "ok", "host": host}

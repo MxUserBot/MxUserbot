@@ -1,0 +1,25 @@
+[project]
+name = "sekai-matrix-userbot"
+version = "0.1.0"
+description = "MXUserbot — Matrix userbot"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "aiofiles>=25.1.0",
+    "cryptography>=47.0.0",
+    "fastapi[standard]>=0.135.3",
+    "loguru>=0.7.3",
+    "mautrix[encryption]>=0.21.0",
+    "mxc",
+    "pillow>=12.2.0",
+    "psutil>=7.2.2",
+    "pydantic>=2.12.5",
+    "python-olm",
+    "requests>=2.33.1",
+    "rocksdict>=0.3.29",
+    "ruamel-yaml>=0.19.1",
+]
+
+
+[tool.uv.sources]
+mxc = { git = "https://github.com/MxUserBot/MXC-python" }
