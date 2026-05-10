@@ -92,7 +92,7 @@ class HelperModule(loader.Module):
             "<b><u>✨ | MXUserbot | ✨</u></b><br><br>"
             "🆔 | Version: <code>{version}</code><br>"
             "👩‍💻 | source: "
-            "<a href='https://github.com/PashaHatsune/MxUserbot'>Repository</a><br>"
+            "<a href='https://github.com/MxUserBot/MXUserbot'>Repository</a><br>"
         ),
     }
 
