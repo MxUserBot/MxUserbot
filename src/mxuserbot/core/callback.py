@@ -102,6 +102,7 @@ class CallBack(BaseCallBack):
                                         reply_on_validation_error=True,
                                     )
                                 )
+                                self.mx.fsm.mark_processed(evt)
                                 return
 
         if prefix:
