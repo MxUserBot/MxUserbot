@@ -1,7 +1,6 @@
-
-<p align="center">
+<div align="center">
   <h1>✨ | MXUserbot | ✨</h1>
-</p>
+</div>
 
 <p align="center">
   <img width="1376" height="768" alt="result" src="assets/banner.png" />
