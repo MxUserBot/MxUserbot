@@ -86,6 +86,7 @@ class MXUS:
 
         self.comm_markers = ("/mxuserbot/community/",)
         self.comm_marker = self.comm_markers[0]
+        self._in_is_community = False
         self.key = "mxu.rocksdb/.mxu.key"
         
         self.forbidden_api =[
@@ -136,11 +137,17 @@ class MXUS:
     def _is_community_caller(
         self
     ) -> bool:
+        if self._in_is_community:
+            return False
+        self._in_is_community = True
         try:
             f = sys._getframe(2)
             fn = f.f_code.co_filename.replace("\\", "/")
             return any(marker in fn for marker in self.comm_markers)
-        except Exception: return False
+        except Exception:
+            return False
+        finally:
+            self._in_is_community = False
 
 
     def _enable_firewall(
