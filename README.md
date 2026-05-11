@@ -24,22 +24,22 @@
 
 <table cellspacing="0" width="100%">
  <tr>
-  <td width="50%" style="border:1px solid #30363d;padding:0;vertical-align:top"><div style="padding:12px;border-bottom:1px solid #30363d"><b>Emoji Callbacks</b> - Reactions as buttons.</div><video src="https://raw.githubusercontent.com/MxUserBot/MXUserbot/main/assets/promo/EMOJICALLBACK.mp4" controls width="100%" style="display:block"></video></td>
-  <td width="50%" style="border:1px solid #30363d;padding:0;vertical-align:top"><div style="padding:12px;border-bottom:1px solid #30363d"><b>FSM</b> - Multi-step dialogs with state persistence.</div><video src="https://raw.githubusercontent.com/MxUserBot/MXUserbot/main/assets/promo/FSM.mp4" controls width="100%" style="display:block"></video></td>
+  <td width="50%" style="border:1px solid #30363d;padding:0;vertical-align:top"><div style="padding:12px;border-bottom:1px solid #30363d"><b>Emoji Callbacks</b> - Reactions as buttons.</div><img src="assets/promo/EMOJICALLBACK.gif" width="100%" style="display:block"></td>
+  <td width="50%" style="border:1px solid #30363d;padding:0;vertical-align:top"><div style="padding:12px;border-bottom:1px solid #30363d"><b>FSM</b> - Multi-step dialogs with state persistence.</div><img src="assets/promo/FSM.gif" width="100%" style="display:block"></td>
  </tr>
 </table>
 
 <table cellspacing="0" width="100%">
  <tr>
-  <td width="50%" style="border:1px solid #30363d;padding:0;vertical-align:top"><div style="padding:12px;border-bottom:1px solid #30363d"><b>Web Panel</b> - Manage modules/account via web panel</div><video src="https://raw.githubusercontent.com/MxUserBot/MXUserbot/main/assets/promo/SITE.mp4" controls width="100%" style="display:block"></video></td>
-  <td width="50%" style="border:1px solid #30363d;padding:0;vertical-align:top"><div style="padding:12px;border-bottom:1px solid #30363d"><b>SUDO LIST</b> - Grant your friend permission to execute commands </div><video src="https://raw.githubusercontent.com/MxUserBot/MXUserbot/main/assets/promo/SUDO.mp4" controls width="100%" style="display:block"></video></td>
+  <td width="50%" style="border:1px solid #30363d;padding:0;vertical-align:top"><div style="padding:12px;border-bottom:1px solid #30363d"><b>Web Panel</b> - Manage modules/account via web panel</div><img src="assets/promo/SITE.gif" width="100%" style="display:block"></td>
+  <td width="50%" style="border:1px solid #30363d;padding:0;vertical-align:top"><div style="padding:12px;border-bottom:1px solid #30363d"><b>SUDO LIST</b> - Grant your friend permission to execute commands </div><img src="assets/promo/SUDO.gif" width="100%" style="display:block"></td>
  </tr>
 </table>
 
 <table cellspacing="0" width="100%">
  <tr>
-  <td width="50%" style="border:1px solid #30363d;padding:0;vertical-align:top"><div style="padding:12px;border-bottom:1px solid #30363d"><b>SAS Verification</b> - Verify your device anywhere!.</div><video src="https://raw.githubusercontent.com/MxUserBot/MXUserbot/main/assets/promo/VERIF.mp4" controls width="100%" style="display:block"></video></td>
-  <td width="50%" style="border:1px solid #30363d;padding:0;vertical-align:top"><div style="padding:12px;border-bottom:1px solid #30363d"><b>Module Repository</b> — add custom repositories!</div><video src="https://raw.githubusercontent.com/MxUserBot/MXUserbot/main/assets/promo/REPOS.mp4" controls width="100%" style="display:block"></video></td>
+  <td width="50%" style="border:1px solid #30363d;padding:0;vertical-align:top"><div style="padding:12px;border-bottom:1px solid #30363d"><b>SAS Verification</b> - Verify your device anywhere!.</div><img src="assets/promo/VERIF.gif" width="100%" style="display:block"></td>
+  <td width="50%" style="border:1px solid #30363d;padding:0;vertical-align:top"><div style="padding:12px;border-bottom:1px solid #30363d"><b>Module Repository</b> — add custom repositories!</div><img src="assets/promo/REPOS.gif" width="100%" style="display:block"></td>
  </tr>
 </table>
 
