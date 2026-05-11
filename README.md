@@ -51,9 +51,7 @@
  </tr>
 </table>
 
-<br>
-
-<h3>Installation</h3>
+<h2>Installation</h2>
 
 <table cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%;">
   <tr>
@@ -72,7 +70,7 @@
   </tr>
 </table>
 
-<br>
+<hr>
 
 <h4>Docker</h4>
 <pre><code>git clone https://github.com/PashaHatsune/MxUserbot.git
@@ -85,7 +83,7 @@ cd MxUserbot
 uv sync
 uv run -m src.mxuserbot</code></pre>
 
-<br>
+<hr>
 
 <h3>Documentation</h3>
 <p><a href="https://mxuserbot.github.io/documentation/">https://mxuserbot.github.io/documentation/</a></p>
@@ -93,7 +91,7 @@ uv run -m src.mxuserbot</code></pre>
 <h3>Donate</h3>
 <p><a href="https://destream.net/live/Pashahatsune/donate">https://destream.net/live/Pashahatsune/donate</a></p>
 
-<br>
+<hr>
 
 <h3>Credits</h3>
 <ul>
@@ -101,7 +99,7 @@ uv run -m src.mxuserbot</code></pre>
   <li><b>@maseckt</b> — thanks for help with the code/videos.</li>
 </ul>
 
-<br>
+
 
 <h2>Disclaimer</h2>
 <p align="justify">
@@ -113,7 +111,7 @@ uv run -m src.mxuserbot</code></pre>
   <li><b>Strict Prohibition:</b> Use of this bot for fraudulent activities, spam, or any actions that violate terms of service or local laws is strictly prohibited.</li>
 </ul>
 
-<br>
+<hr>
 
 <div align="center">
     <img width="10%" src="assets/promo/miku.gif">
