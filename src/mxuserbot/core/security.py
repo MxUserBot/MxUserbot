@@ -96,7 +96,7 @@ class MXUS:
             "login", "logout", "logout_all", "create_device_msc4190",
             "add_dispatcher", "remove_dispatcher"
         ]
-        self.forbidden_attrs = ["crypto", "crypto_enabled", "gg", "device_id"]
+        self.forbidden_attrs = ["crypto", "crypto_enabled", "_bot", "device_id"]
         
         self.all_forbidden = set(self.forbidden_api + self.forbidden_core + self.forbidden_attrs)
         

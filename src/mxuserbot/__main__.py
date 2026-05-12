@@ -86,6 +86,9 @@ class MXBotInterface:
     def _prefixes(self, value):
         self._bot._prefixes = value
 
+    @property
+    def log_room(self):
+        return self._bot.log_room
 
     @property
     def security(self) -> MXUS:
@@ -130,6 +133,7 @@ class MXUserBot(Program):
         
         self.start_time: Optional[int] = None
         self._prefixes: str = "."
+        self.log_room = None
 
 
     async def _get_core_conf(
@@ -163,31 +167,22 @@ class MXUserBot(Program):
 
     async def _setup_logs(self) -> str | None:
         log_room_id = await self._get_core_conf("log_room_id")
+        print(log_room_id)
         if log_room_id:
+            self.log_room = log_room_id
             return str(log_room_id)
-        return None
+        await self._init_logs_background()
 
     async def _init_logs_background(self) -> None:
         try:
             log_room_id = await self._get_core_conf("log_room_id")
-            if log_room_id:
-                return
 
             target_name = "[LOGS] | MX-USERBOT"
-            rooms = await self.client.get_joined_rooms()
 
-            async def check_name(rid):
-                try:
-                    st = await self.client.get_state_event(rid, EventType.ROOM_NAME)
-                    return rid if st and st.get("name") == target_name else None
-                except Exception: return None
-
-            found = await asyncio.gather(*[check_name(r) for r in rooms])
-            log_room_id = next((res for res in found if res), None)
 
             if not log_room_id:
                 self.log.warning("Room not found.. Create new..")
-                avatar = "mxc://pashahatsune.pp.ua/hGaNZRrDKOF5HlHjZ8VilRWj5QHFOXoy"
+                avatar = "mxc://matrix.org/hokwPmIkfLsoALRksGgAaYOe"
                 log_room_id = await self.client.create_room(
                     name=target_name,
                     is_direct=True,
@@ -201,25 +196,22 @@ class MXUserBot(Program):
                 await self.client.join_room(log_room_id)
                 msg_id = await utils.answer(
                     self.interface,
-                    """
-👋 | This is **MXUserbot**. Thanks for installing!
-🔖 | **Default prefix** \[.\]
-
-🤔 | <u>**Getting started**</u>
-
-1. \[Optional\] Verify your bot via SAS verification
-2. `help` — list all commands
-
-📦 | <u>**Modules**</u>
-
-1. `ms <name>` — search modules
-2. `mdl <name>` — install module
-3. `unmd <name>` — remove module
-4. `addrepo <url>` — add community repo
-5. `cfg <module> <key> <value>` — config module
-
-🌌 | #MxUserbot:matrix.org
-                    """,
+                    "👋 | This is <b>MXUserbot</b>. Thanks for installing!<br>"
+                    "🔖 | <b>Default prefix</b> [.]<br>┗ .set_prefix 'any_symbol'<br>"
+                    "🤔 | <u><b>Getting started</b></u><br>"
+                    "<ol>"
+                    "<li>[Optional] Verify your bot via SAS verification</li>"
+                    "<li><code>help</code> — list all commands</li>"
+                    "</ol>"
+                    "📦 | <u><b>Modules</b></u><br>"
+                    "<ol>"
+                    "<li><code>ms &lt;name&gt;</code> — search modules</li>"
+                    "<li><code>mdl &lt;name&gt;</code> — install module</li>"
+                    "<li><code>unmd &lt;name&gt;</code> — remove module</li>"
+                    "<li><code>addrepo &lt;url&gt;</code> — add community repo</li>"
+                    "<li><code>cfg &lt;module&gt; &lt;key&gt; &lt;value&gt;</code> — config module</li>"
+                    "</ol>"
+                    "🌌 | <a href='https://matrix.to/#/#MxUserbot:matrix.org'>#MxUserbot:matrix.org</a>",
                     room_id=log_room_id
                 )
                 await utils.pin_room(self.interface, log_room_id)
