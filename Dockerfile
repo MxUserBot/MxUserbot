@@ -13,10 +13,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY . /app
 
-RUN uv sync
+RUN uv sync --no-dev
 
 EXPOSE 8000
 
-RUN mkdir -p /app/data
-
-CMD ["uv", "run", "python", "-m", "src.mxuserbot"]
+CMD ["uv", "run", "--no-dev", "python", "-m", "src.mxuserbot"]

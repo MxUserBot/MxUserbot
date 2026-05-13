@@ -79,7 +79,7 @@ class UnmdPayload(BaseModel):
 @loader.tds
 class LoaderModule(loader.Module):
     config = {
-        "repo_url": loader.ConfigValue("https://raw.githubusercontent.com/MxUserBot/mx-modules/main", "Main system repository URL"),
+        "repo_url": loader.ConfigValue("https://raw.githubusercontent.com/MxUserBot/mx-modules/main", "Main system repository URL", required=True),
         "repo_warn_ok": loader.ConfigValue(False, "User accepted third-party repo warning"),
         "dev_warn_ok": loader.ConfigValue(False, "User accepted dev/file installation warning")
     }
@@ -94,8 +94,9 @@ class LoaderModule(loader.Module):
         "reloading": "⏳ | <b>Reloading all modules...</b>",
         "reloaded": "♻️ | <b>Modules reloaded. Total: {count}</b>",
         "unloaded": "✅ | <b>Module <code>{name}</code> unloaded.</b>",
-        "search_header": "<b>{icon} | Found in {type} Repo: <code>{url}</code></b><br>",
-        "search_item": "📦 | <b>{name}</b> (<code>{id}</code>) v<b>{version}</b><br>📥 | <b><code>.mdl {cmd_id}</code></b><br>",
+        "search_header": "<b>{icon} | <a href='{url}'>{type} Repository</a></b><br>⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯<br>",
+        "search_item": "📦 | <b><a href='{raw_url}'>{name}</a></b> [v{version}]<br>┗ <code>.mdl {cmd_id}</code><br><br>",
+
         "confirm_unsafe": "⚠️ | <b>SECURITY WARNING</b><br>You are installing a module from <b>{source}</b> — an <b>UNVERIFIED</b> source.<br>This module has <b>NOT</b> been reviewed and may contain malicious code.<br><br><b>Do you confirm that you want to install this module?</b>",
         "confirm_cancelled": "❌ | <b>Installation cancelled by user.</b>",
         "dev_usage": "❌ | <b>Direct links/files require <code>dev</code> prefix.</b>",
@@ -153,61 +154,90 @@ class LoaderModule(loader.Module):
         )
         return False
 
-
     @loader.command(aliases=["ms"], security=loader.OWNER)
     async def msearch(self, mx, event: MessageEvent, payload: SearchPayload):
         """<query> — search module in repo"""
         if not payload.query:
             raise UsageError
+            
         results = await self.repo.search(payload.query)
         if not results:
             return await utils.answer(mx, self.strings["search_empty"].format(query=payload.query))
 
-        items = []
+        results.sort(key=lambda x: not x["is_verified"])
+
+        flat_list = []
         for res in results:
-            icon, rtype = ("✅", "SYSTEM") if res["is_verified"] else ("👥", "COMMUNITY")
-            header = self.strings["search_header"].format(icon=icon, type=rtype, url=res["repo_url"])
-            
             prefix = ""
             if not res["is_verified"]:
+                # Красивый префикс из ника GitHub или "comm/"
                 parts = res["repo_url"].split("/")
-                prefix = f"{parts[3]}/" if "github" in res["repo_url"] and len(parts) > 3 else "comm/"
+                if "github" in res["repo_url"] and len(parts) > 3:
+                    prefix = f"{parts[3]}/"
+                else:
+                    prefix = "comm/"
 
-            mods = [
-                self.strings["search_item"].format(
-                    name=mod.get("name", "Unknown"),
-                    id=mod.get("id"),
-                    version=mod.get("version", "1.0.0"),
-                    cmd_id=f"{prefix}{mod.get('id')}"
-                ) for mod in res["modules"]
-            ]
-            items.append(header + "".join(mods))
+            for mod in res["modules"]:
+                flat_list.append({
+                    "repo_info": res,
+                    "mod_info": mod,
+                    "prefix": prefix
+                })
 
-        total_mods = sum(len(res["modules"]) for res in results)
-        if total_mods <= 3:
-            await utils.answer(mx, "<br>".join(items))
+        def render_page(items_slice, page_num, total_pages):
+            content = []
+            last_repo_url = None
+            
+            for item in items_slice:
+                res = item["repo_info"]
+                mod = item["mod_info"]
+                prefix = item["prefix"]
+                
+                if res["repo_url"] != last_repo_url:
+                    if res["is_verified"]:
+                        header = self.strings["search_header"].format(
+                            icon="✅", 
+                            type="SYSTEM", 
+                            url=res["repo_url"]
+                        )
+                    else:
+                        header = "<b>👥 | COMMUNITY Repository</b><br>⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯<br>"
+                    
+                    content.append(header)
+                    last_repo_url = res["repo_url"]
+                
+                mod_name = mod.get("name") or mod.get("id", "Unknown")
+                content.append(
+                    self.strings["search_item"].format(
+                        name=mod_name,
+                        raw_url=mod.get("url", "#"),
+                        version=mod.get("version", "1.0.0"),
+                        cmd_id=f"{prefix}{mod.get('id')}"
+                    )
+                )
+            
+            footer = f"<br><i>Page {page_num + 1} of {total_pages}</i>"
+            return "".join(content) + footer
+
+        per_page = 5
+        pages = []
+        total_mod_count = len(flat_list)
+        total_pages_count = (total_mod_count - 1) // per_page + 1
+        
+        for i in range(0, total_mod_count, per_page):
+            pages.append(render_page(flat_list[i : i + per_page], len(pages), total_pages_count))
+
+        if len(pages) == 1:
+            await utils.answer(mx, pages[0])
             return
 
-        per_page = 3
-        pages = []
-        acc = []
-        count = 0
-        for item in items:
-            acc.append(item)
-            count += 1
-            if count >= per_page:
-                pages.append("<br>".join(acc))
-                acc = []
-                count = 0
-        if acc:
-            pages.append("<br>".join(acc))
-
         async def on_page(ctx):
-            page = ctx.data["page"]
+            page = ctx.data.get("page", 0)
             if ctx.payload == "prev":
-                page = max(0, page - 1)
-            elif ctx.payload == "next":
-                page = min(len(pages) - 1, page + 1)
+                page = page - 1 if page > 0 else len(pages) - 1
+            else:
+                page = (page + 1) % len(pages)
+            
             ctx.data["page"] = page
             await ctx.edit(pages[page])
 
@@ -218,27 +248,10 @@ class LoaderModule(loader.Module):
             ]],
             callback=on_page,
             data={"page": 0},
-            remove_clicked=False,
+            remove_clicked=True,
         )
-        await utils.answer(mx, pages[0], event=event, reply_markup=markup)
 
-    async def _show_module_help(self, mx, event, filename: str):
-        from pathlib import Path
-        stem = Path(filename).stem
-        mod = mx.active_modules.get(stem)
-        if not mod:
-            return
-        prefix = await utils.get_prefix(mx)
-        name = getattr(getattr(mod, "Meta", None), "name", stem)
-        desc = getattr(getattr(mod, "Meta", None), "description", "")
-        commands = getattr(mod, "commands", {})
-        lines = [f"<b>📦 | {name}</b><br><i>{desc}</i><br>"]
-        if commands:
-            lines.append("<br><b>🛠 | Commands:</b><br>")
-            for cmd_name, func in commands.items():
-                doc = func.__doc__ or "No description"
-                lines.append(f" • <code>{prefix}{cmd_name}</code> — <i>{doc}</i><br>")
-        await utils.answer(mx, "".join(lines), event=event)
+        await utils.answer(mx, pages[0], event=event, reply_markup=markup)
 
 
     @loader.command(security=loader.OWNER)
@@ -264,7 +277,7 @@ class LoaderModule(loader.Module):
                 await ctx.close()
                 if await self.repo.install(**install_kw):
                     await utils.answer(mx, self.strings["done"].format(name=fname), edit_id=status_id)
-                    await self._show_module_help(mx, event, fname)
+                    await self.loader.show_module_help(mx, event, fname)
                 else:
                     await utils.answer(mx, self.strings["error"].format(err="Install failed!"), edit_id=status_id)
 
@@ -273,7 +286,7 @@ class LoaderModule(loader.Module):
 
             if await self.repo.install(**install_kw):
                 await utils.answer(mx, self.strings["done"].format(name=fname), edit_id=status_id)
-                await self._show_module_help(mx, event, fname)
+                await self.loader.show_module_help(mx, event, fname)
             else:
                 raise ValueError("Installation failed")
             return
@@ -291,12 +304,12 @@ class LoaderModule(loader.Module):
             await ctx.close()
             await utils.answer(mx, self.strings["downloading"], edit_id=status_id)
             if await self.repo.install(target=payload.target):
-                filename = url.split("/")[-1]
-                if not filename.endswith((".py", ".zip")): filename += ".py"
-                await utils.answer(mx, self.strings["done"].format(name=filename), edit_id=status_id)
-                await self._show_module_help(mx, event, filename)
+                    filename = url.split("/")[-1]
+                    if not filename.endswith((".py", ".zip")): filename += ".py"
+                    await utils.answer(mx, self.strings["done"].format(name=filename), edit_id=status_id)
+                    await self.loader.show_module_help(mx, event, filename)
             else:
-                await utils.answer(mx, self.strings["error"].format(err="Install failed!"), edit_id=status_id)
+                    await utils.answer(mx, self.strings["error"].format(err="Install failed!"), edit_id=status_id)
 
         if not await self._security_gate(mx, event, payload, getattr(source, "is_verified", False), on_confirm=_install):
             return
@@ -306,7 +319,7 @@ class LoaderModule(loader.Module):
             filename = url.split("/")[-1]
             if not filename.endswith((".py", ".zip")): filename += ".py"
             await utils.answer(mx, self.strings["done"].format(name=filename), edit_id=status_id)
-            await self._show_module_help(mx, event, filename)
+            await self.loader.show_module_help(mx, event, filename)
         else:
             await utils.answer(mx, self.strings["error"].format(err="Install failed!"), edit_id=status_id)
 

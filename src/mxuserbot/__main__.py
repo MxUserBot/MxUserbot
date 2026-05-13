@@ -368,6 +368,7 @@ class MXUserBot(Program):
 
         if hasattr(self, "_db") and self._db is not None:
             try:
+                await self._db.flush()
                 self._db.close()
             except Exception as e:
                 raise

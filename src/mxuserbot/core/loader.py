@@ -234,6 +234,48 @@ class Loader:
                     logger.error(f"Module load error: {r}")
 
 
+    async def show_module_help(self, mx, event, filename: str) -> None:
+        async def _inner():
+            mod_name = filename.replace(".py", "").replace(".zip", "")
+            mod = self.active_modules.get(mod_name)
+            if not mod:
+                return
+
+            prefix = await utils.get_prefix(mx)
+            meta = getattr(mod, "Meta", None)
+            name = getattr(meta, "name", mod_name)
+            desc = getattr(meta, "description", "—")
+            version = getattr(meta, "version", "")
+
+            lines = [f"<b>📦 | {name}</b>"]
+            if version:
+                lines[0] += f" <i>v{version}</i>"
+            lines.append(f"<b>ℹ️ | Description:</b> <i>{desc}</i><br>")
+
+            if hasattr(mod, "config") and hasattr(mod.config, "_schema"):
+                lines.append("<b>⚙️ | Configuration:</b><br>")
+                for key, cfg_val in mod.config._schema.items():
+                    lines.append(
+                        f"    ⬥ <code>{key}</code>: "
+                        f"<i>{cfg_val.description or '—'}</i> "
+                        f"(Current: <code>{mod.config[key]}</code>)<br>"
+                    )
+
+            commands = getattr(mod, "commands", {})
+            if commands:
+                lines.append("<b>🛠 | Commands:</b><br>")
+                for cmd_name, func in commands.items():
+                    cmd_desc = (func.__doc__ or "—").replace("<", "&lt;").replace(">", "&gt;")
+                    lines.append(f" • <code>{prefix}{cmd_name}</code> — <i>{cmd_desc}</i><br>")
+
+            await utils.answer(mx, "".join(lines), event=event)
+
+        try:
+            await _inner()
+        except Exception:
+            pass
+
+
     async def register_module(
         self,
         path: Path,
@@ -767,7 +809,7 @@ class RepoManager:
             return target, RepoSource(url=target, is_verified=False)
 
         prefix, _, mod_id = target.rpartition("/")
-        search_id = mod_id or target
+        search_id = (mod_id or target).lower()
 
         for source in sources:
             if prefix and prefix.lower() not in source.url.lower():
@@ -776,8 +818,10 @@ class RepoManager:
             index_data = await self._fetch_index(source.url)
             if not index_data: continue
             
-            if search_id in index_data:
-                full_url = index_data[search_id]["url"]
+            found_id = next((k for k in index_data.keys() if k.lower() == search_id), None)
+            
+            if found_id:
+                full_url = index_data[found_id]["url"]
                 return full_url, source
         
         return None, None
@@ -1022,19 +1066,35 @@ class RepoManager:
         self,
         name: str
     ) -> None:
-        await self.loader.unload_module(name, self.mx)
+        actual_name = next(
+            (k for k in self.loader.active_modules.keys() if k.lower() == name.lower()), 
+            None
+        )
 
-        py_path = Path(self.loader.community_path) / f"{name}.py"
+        if not actual_name:
+            for item in self.loader.community_path.iterdir():
+                if item.is_dir() and item.name.lower() == name.lower():
+                    actual_name = item.name
+                    break
+                if item.is_file() and item.suffix == ".py" and item.stem.lower() == name.lower():
+                    actual_name = item.stem
+                    break
+
+        if not actual_name:
+            raise ValueError(f"Module '{name}' not found!")
+
+        await self.loader.unload_module(actual_name, self.mx)
+
+        py_path = Path(self.loader.community_path) / f"{actual_name}.py"
         if py_path.exists():
             py_path.unlink()
 
-        pkg_path = Path(self.loader.community_path) / name
+        pkg_path = Path(self.loader.community_path) / actual_name
         if pkg_path.is_dir():
             shutil.rmtree(str(pkg_path), ignore_errors=True)
 
-        await self._remove_dependencies(name)
-        logger.success(f"Module {name} and its isolated dependencies unloaded!")
-
+        await self._remove_dependencies(actual_name)
+        logger.success(f"Module {actual_name} unloaded")
 
     async def get_file_content(
         self,

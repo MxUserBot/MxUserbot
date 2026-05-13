@@ -4,7 +4,6 @@
 # You can redistribute it and/or modify it under the terms of the GNU AGPLv3
 # 🔑 https://www.gnu.org/licenses/agpl-3.0.html
 
-import logging
 from typing import Any
 
 from fastapi import HTTPException, Request
