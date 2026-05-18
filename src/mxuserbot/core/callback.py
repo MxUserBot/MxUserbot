@@ -55,10 +55,10 @@ class CallBack(BaseCallBack):
             orig_f = getattr(func, "__func__", func)
             raw_doc = getattr(orig_f, "__doc__", "") or ""
             clean = raw_doc.replace("<", "&lt;").replace(">", "&gt;")
-            await wrapped.reply(self.strings("callback.usage", prefix=prefix, cmd=cmd_name, usage=clean))
+            await wrapped.reply(self.strings.get("callback.usage").format(prefix=prefix, cmd=cmd_name, usage=clean))
         except Exception as e:
             logger.exception(f"Command execution error: {cmd_name}")
-            await wrapped.reply(self.strings("callback.error", error=e))
+            await wrapped.reply(self.strings.get("callback.error").format(error=e))
 
     async def message_cb(self, evt: MessageEvent):
         if evt.event_id in self.mx._ignore_ids:
@@ -144,8 +144,9 @@ class CallBack(BaseCallBack):
                 if missing:
                     desc = mod.config.get_description(missing)
                     await wrapped.reply(
-                        self.strings("callback.config_required",
-                            name=mod.name, key=missing, desc=desc, prefix=prefix)
+                        self.strings.get("callback.config_required").format(
+                            name=mod.name, key=missing, desc=desc, prefix=prefix,
+                        )
                     )
                     return
 

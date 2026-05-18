@@ -25,20 +25,20 @@ from ruamel.yaml.comments import CommentedMap
 
 from mxc import utils
 from mxc.client import MXCClient
-from mxc.crypto import BotSASVerification, RocksCryptoStore, RocksCryptoStateStore
+from mxc.crypto import RocksCryptoStore, RocksCryptoStateStore
 from mxc.database import Database
 from mxc.fsm import FSM
 from mxc.types import InterceptHandler, POLL_RESPONSE, POLL_END
 
 
-from .core import (
+from . import (
     CallBack,
     Loader,
     MXUS,
+    MXBotInterface
+    
 )
 from .core.langs import STRINGS, init as lang_init
-
-
 
 
 class Config(BaseFileConfig):
@@ -57,56 +57,6 @@ class Config(BaseFileConfig):
     def do_update(self, helper: ConfigUpdateHelper) -> None: pass
 
 
-class MXBotInterface:
-    """A secure wrapper to be passed to modules."""
-
-    def __init__(self, bot: 'MXUserBot'):
-        self._bot = bot
-        self.strings = STRINGS
-        self.version = bot.version
-
-    @property
-    def client(self) -> MXCClient:
-        return self._bot.client
-
-    @property
-    def _current_event(self):
-        return self._bot._current_event
-    
-    @property
-    def fsm(self):
-        return self._bot.fsm
-
-    @property
-    def sas_verifier(self) -> BotSASVerification:
-        return self._bot.sas_verifier
-
-    @property
-    def _prefixes(self):
-        return self._bot._prefixes
-
-    @_prefixes.setter
-    def _prefixes(self, value):
-        self._bot._prefixes = value
-
-    @property
-    def log_room(self):
-        return self._bot.log_room
-
-    @property
-    def security(self) -> MXUS:
-        return self._bot.security
-
-    @property
-    def _db(self) -> Database:
-        if self._bot.security is not None and self._bot.security._is_community_caller():
-            raise PermissionError(self.strings("main.db_access_denied"))
-        return self._bot._db
-
-    @property
-    def active_modules(self) -> dict:
-        return self._bot.active_modules
-
 
 class MXUserBot(Program):
     _current_event = contextvars.ContextVar("current_event")
@@ -119,7 +69,7 @@ class MXUserBot(Program):
             name='MXUserbot',
             description="MXUserbot - Matrix Userbot.",
             command="-",
-            version="2.5 | STABLE",
+            version="2.6 | BETA",
             config_class=Config
         )
         self.fsm = FSM()
@@ -129,15 +79,20 @@ class MXUserBot(Program):
         self._db: Optional[Database] = None
         self.all_modules: Optional[Loader] = None
         self.security: Optional[MXUS] = None
+        self.log_room = None
         
         self.active_modules: Dict[str, Any] = {}
-        self.interface = MXBotInterface(self)
+        self.interface = MXBotInterface(
+            fsm=self.fsm,
+            current_event=self._current_event,
+            version=self.version,
+            _bot=self,
+        )
         self.auth_completed = asyncio.Event()
         self._ready = asyncio.Event()
         
         self.start_time: Optional[int] = None
         self._prefixes: str = "."
-        self.log_room = None
 
 
     async def _get_core_conf(
@@ -228,7 +183,7 @@ class MXUserBot(Program):
                 await utils.join_room(self.interface, log_room_id)
                 msg_id = await utils.answer(
                     self.interface,
-                    STRINGS("main.welcome"),
+                    STRINGS.get("main.welcome"),
                     room_id=log_room_id
                 )
                 await utils.pin(self.interface, log_room_id, msg_id)
@@ -295,7 +250,25 @@ class MXUserBot(Program):
                 self.security._get_pickle_key()
             )
             await self.client.init_crypto(crypto_store, state_store)
+            self.client.crypto.account.mark_keys_as_published()
+
+            async def _patch_self_sig(dev_self, device_keys, self_signing_key):
+                pass
+
+            async def _patch_cross_sig(dev_self, resp, user_id):
+                pass
+
+            self.client.crypto._store_device_self_signatures = _patch_self_sig.__get__(
+                self.client.crypto, type(self.client.crypto)
+            )
+            self.client.crypto._store_cross_signing_keys = _patch_cross_sig.__get__(
+                self.client.crypto, type(self.client.crypto)
+            )
+
+    
+
             self.sas_verifier = self.client.sas_verifier
+            self.interface._sas_verifier = self.sas_verifier
 
             while True:
                 try:
@@ -306,9 +279,12 @@ class MXUserBot(Program):
                     await asyncio.sleep(5)
 
             await self.security.init_security()
+            self.interface._security = self.security
+            self.interface._client = self.client
             await lang_init(self._get_core_conf, self._set_core_conf)
             await self._upload_assets()
             await self._setup_logs()
+            self.interface._log_room = self.log_room
 
             from .core.log import MXLog
             self.matrix_sink = MXLog(self)
@@ -321,29 +297,18 @@ class MXUserBot(Program):
                 self.log.error("Module loading timed out")
                 raise
             self.active_modules = self.all_modules.active_modules
+            self.interface._active_modules = self.active_modules
 
             load_errors = self.all_modules._load_errors
-            if load_errors:
-                errors_list = "<br>".join(
-                    f"⬥ <code>{err['name']}</code>: {err['error']}" for err in load_errors
-                )
-                if self.log_room:
-                    try:
-                        await utils.answer(
-                            self.interface,
-                            STRINGS("main.load_errors", errors=errors_list),
-                            room_id=self.log_room,
-                        )
-                    except Exception:
-                        pass
-                else:
-                    self.log.warning(f"Module load errors: {load_errors}")
+            if load_errors and not self.log_room:
+                self.log.warning(f"Module load errors: {load_errors}")
 
             self._prefixes = await self._get_core_conf("prefix")
             if not self._prefixes:
                 await self._db.set(owner="core", key="prefix", value=".")
                 self._prefixes = "." 
-                
+            self.interface._prefixes = self._prefixes
+
             cb = CallBack(self)
             self.client.add_event_handler(EventType.ROOM_MEMBER, self.security.gate(cb.invite_cb))
             self.client.add_event_handler(EventType.ROOM_MEMBER, cb.memberevent_cb)
@@ -385,16 +350,10 @@ class MXUserBot(Program):
                 self.log.success(f"Userbot Started: {self.client.mxid}")
                 self._ready.set()
 
-                total = len(self.active_modules)
-                if self.log_room:
-                    try:
-                        await utils.answer(
-                            self.interface,
-                            STRINGS("main.bot_started", count=total),
-                            room_id=self.log_room,
-                        )
-                    except Exception:
-                        pass
+                for instance in list(self.active_modules.values()):
+                    for handler in getattr(instance, "_start_handlers", []):
+                        passed = self if instance._is_core else self.interface
+                        asyncio.create_task(handler(passed))
             except asyncio.TimeoutError:
                 self.log.error("Server timeout")
 

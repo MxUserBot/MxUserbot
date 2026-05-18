@@ -11,12 +11,12 @@ callback:
 
 loader:
   help_name: "<b>📦 | {name}</b>"
-  help_name_version: " <i>v{version}</i>"
-  help_desc: "<b>ℹ️ | Описание:</b> <i>{desc}</i><br>"
-  help_config_title: "<b>⚙️ | Конфигурация:</b><br>"
-  help_config_item: "    ⬥ <code>{key}</code>: <i>{desc}</i> (Текущее: <code>{val}</code>)<br>"
-  help_commands_title: "<b>🛠 | Команды:</b><br>"
-  help_command_item: " • <code>{prefix}{cmd}</code> — <i>{desc}</i><br>"
+  help_name_version: " <i>v{version}</i><br>"
+  help_desc: "┗ {desc}<br>"
+  help_config_title: "<b>⚙️ | <u>Конфигурация</u></b><br>"
+  help_config_item: "- <code>{key}</code>: <i>{desc}</i> (текущее: <code>{val}</code>)<br>"
+  help_commands_title: "<b>🛠 Команды</b><br>"
+  help_command_item: "• <code>{prefix}{cmd}</code> — <i>{desc}</i><br>"
   core_frozen: "Модули ядра заморожены в памяти и не могут быть изменены!"
   dep_conflict: "<b>⚠️ Обнаружен конфликт зависимостей!</b><br>Модуль <code>{id}</code> требует пакеты, уже используемые другими модулями:<br>{conflicts}<br><br><b>Всё равно установить?</b>"
   dep_confirm_yes: "✅ Установить"
@@ -35,6 +35,8 @@ loader:
   no_target: "Не указан модуль или код для установки!"
   module_not_found: "Модуль '{name}' не найден!"
   not_file: "Это не файл!"
+  update_header: "🔄 | Доступны обновления модулей:"
+  update_line: "⬥ <code>{name}</code>: {current} → <b>{available}</b>"
 
 module:
   no_description: "Нет описания"

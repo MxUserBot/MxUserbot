@@ -75,7 +75,7 @@ class MXLog:
                     else:
                         await utils.answer(
                             self.mx,
-                            text=self.strings("log.format", text=text),
+                            text=self.strings.get("log.format").format(text=text),
                             room_id=room_id,
                         )
                     self._last_send = time.monotonic()

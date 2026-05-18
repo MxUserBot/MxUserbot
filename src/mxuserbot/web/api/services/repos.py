@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from mxc import utils
+from ....core import utils as cutils
 from ..schemas import RepoActionRequest
 
 
@@ -25,7 +26,7 @@ class RepoService:
         req: RepoActionRequest,
         repo: Any
     ) -> dict[str, str]:
-        url = utils.convert_repo_url(req.url.strip())
+        url = cutils.convert_repo_url(req.url.strip())
         test_index = await repo._fetch_index(url)
         if not test_index:
             raise HTTPException(
@@ -36,7 +37,7 @@ class RepoService:
         repos = await repo.get_repos()
         if url not in repos:
             repos.append(url)
-            await repo.db.set("core", "community_repos", repos)
+            await repo.db.set("LoaderModule", "community_repos", repos)
 
         return {"status": "ok"}
 
@@ -50,6 +51,6 @@ class RepoService:
         repos = await repo.get_repos()
         if url in repos:
             repos.remove(url)
-            await repo.db.set("core", "community_repos", repos)
+            await repo.db.set("LoaderModule", "community_repos", repos)
 
         return {"status": "ok"}

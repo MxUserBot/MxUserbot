@@ -11,12 +11,12 @@ callback:
 
 loader:
   help_name: "<b>📦 | {name}</b>"
-  help_name_version: " <i>v{version}</i>"
-  help_desc: "<b>ℹ️ | Description:</b> <i>{desc}</i><br>"
-  help_config_title: "<b>⚙️ | Configuration:</b><br>"
-  help_config_item: "    ⬥ <code>{key}</code>: <i>{desc}</i> (Actuel: <code>{val}</code>)<br>"
-  help_commands_title: "<b>🛠 | Commandes:</b><br>"
-  help_command_item: " • <code>{prefix}{cmd}</code> — <i>{desc}</i><br>"
+  help_name_version: " <i>v{version}</i><br>"
+  help_desc: "┗ {desc}<br>"
+  help_config_title: "<b>⚙️ Configuration</b><br>"
+  help_config_item: "- <code>{key}</code>: <i>{desc}</i> (actuel: <code>{val}</code>)<br>"
+  help_commands_title: "<b>🛠 Commandes</b><br>"
+  help_command_item: "• <code>{prefix}{cmd}</code> — <i>{desc}</i><br>"
   core_frozen: "Les modules de base sont gelés en mémoire et ne peuvent pas être modifiés!"
   dep_conflict: "<b>⚠️ Conflit de dépendances détecté!</b><br>Le module <code>{id}</code> nécessite des paquets déjà utilisés par d'autres modules:<br>{conflicts}<br><br><b>Installer quand même?</b>"
   dep_confirm_yes: "✅ Installer"

@@ -6,12 +6,15 @@
 
 from .core.loader import Loader
 from .core.callback import CallBack
-from .core.security import MXUS
+from .core.security import MXUS, MXBotInterface
 from .core import loader
+from .core import utils
 
 __all__ = [
     "Loader",
     "CallBack",
     "MXUS",
     "loader",
+    "MXBotInterface",
+    "utils"
 ]

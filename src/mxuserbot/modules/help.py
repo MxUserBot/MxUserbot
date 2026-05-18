@@ -16,6 +16,7 @@ class Meta:
     tags = ["helper"]
 
 
+from difflib import SequenceMatcher
 from typing import Any
 
 from mautrix.types import MessageEvent
@@ -76,6 +77,7 @@ class Strings(BaseModel):
     config_usage_hint: str
     commands_title: str
     cmd_not_found: str
+    mod_suggestions: str
     mod_not_found: str
     mod_no_cfg: str
     cfg_success: str
@@ -95,12 +97,13 @@ locales = Locales(
         default_desc="Helper Center",
         modules_title="<b>Доступные модули (Стр. {curr}/{total}):</b><br><br>",
         module_item="<details><summary>▫️ <b>{name}</b></summary><i>{desc}</i><br>⬥ {commands}</details>",
-        module_info="<b>📦 | </b> <code>{name}</code><br><b>ℹ️ | Описание:</b> <i>{desc}</i><br><br>",
-        config_title="<b>⚙️ | Параметры конфигурации:</b><br>",
-        config_item="    ⬥ <code>{key}</code>: <i>{desc}</i> (Текущее: <code>{val}</code>)<br>",
-        config_usage_hint="<br><i>Изменить: <code>{prefix}cfg {name} [key] [value]</code></i><br>",
-        commands_title="<br><b>🛠 | Команды:</b><br>",
+        module_info="<b>📦 | {name} {version}</b><br>┗ {desc}<br><br>",
+        config_title="<b>⚙️ Конфигурация</b><br>",
+        config_item="- <code>{key}</code>: <i>{desc}</i> (текущее: <code>{val}</code>)<br>",
+        config_usage_hint="┗ Изменить: <code>{prefix}cfg {name} [key] [value]</code><br><br>",
+        commands_title="<b>🛠 Команды</b><br>",
         cmd_not_found="❌ | <b>Не найдено:</b> Команда или модуль <code>{name}</code> не найдены.",
+        mod_suggestions="<b>🔍 | Не смогли найти по названию.</b> Возможно вы имели ввиду это?<br><br>{suggestions}",
         mod_not_found="❌ | <b>Не найдено:</b> Модуль <code>{name}</code> не найден в реестре.",
         mod_no_cfg="❌ | <b>Ошибка конфигурации:</b> Модуль <code>{name}</code> не поддерживает настройку.",
         cfg_success="✅ | <b>Конфигурация обновлена:</b> <code>{key}</code> для <b>{mod}</b> установлен в <code>{val}</code>",
@@ -118,12 +121,13 @@ locales = Locales(
         default_desc="Helper Center",
         modules_title="<b>Available modules (Page {curr}/{total}):</b><br><br>",
         module_item="<details><summary>▫️ <b>{name}</b></summary><i>{desc}</i><br>⬥ {commands}</details>",
-        module_info="<b>📦 | </b> <code>{name}</code><br><b>ℹ️ | Description:</b> <i>{desc}</i><br><br>",
-        config_title="<b>⚙️ | Configuration Options:</b><br>",
-        config_item="    ⬥ <code>{key}</code>: <i>{desc}</i> (Current: <code>{val}</code>)<br>",
-        config_usage_hint="<br><i>Modify: <code>{prefix}cfg {name} [key] [value]</code></i><br>",
-        commands_title="<br><b>🛠 | Commands:</b><br>",
+        module_info="<b>📦 | {name} {version}</b><br>┗ {desc}<br><br>",
+        config_title="<b>⚙️ Configuration</b><br>",
+        config_item="- <code>{key}</code>: <i>{desc}</i> (current: <code>{val}</code>)<br>",
+        config_usage_hint="┗ Modify: <code>{prefix}cfg {name} [key] [value]</code><br><br>",
+        commands_title="<b>🛠 Commands</b><br>",
         cmd_not_found="❌ | <b>Lookup Failed:</b> Command or module <code>{name}</code> not found.",
+        mod_suggestions="<b>🔍 | Could not find by name.</b> Did you mean this?<br><br>{suggestions}",
         mod_not_found="❌ | <b>Lookup Failed:</b> Module <code>{name}</code> not found in registry.",
         mod_no_cfg="❌ | <b>Config Error:</b> Module <code>{name}</code> does not support configuration.",
         cfg_success="✅ | <b>Config Updated:</b> <code>{key}</code> for <b>{mod}</b> set to <code>{val}</code>",
@@ -141,12 +145,13 @@ locales = Locales(
         default_desc="Helper Center",
         modules_title="<b>Доступні модулі (Стор. {curr}/{total}):</b><br><br>",
         module_item="<details><summary>▫️ <b>{name}</b></summary><i>{desc}</i><br>⬥ {commands}</details>",
-        module_info="<b>📦 | </b> <code>{name}</code><br><b>ℹ️ | Опис:</b> <i>{desc}</i><br><br>",
-        config_title="<b>⚙️ | Параметри конфігурації:</b><br>",
-        config_item="    ⬥ <code>{key}</code>: <i>{desc}</i> (Поточне: <code>{val}</code>)<br>",
-        config_usage_hint="<br><i>Змінити: <code>{prefix}cfg {name} [key] [value]</code></i><br>",
-        commands_title="<br><b>🛠 | Команди:</b><br>",
+        module_info="<b>📦 | {name} {version}</b><br>┗ {desc}<br><br>",
+        config_title="<b>⚙️ Конфігурація</b><br>",
+        config_item="- <code>{key}</code>: <i>{desc}</i> (поточне: <code>{val}</code>)<br>",
+        config_usage_hint="┗ Змінити: <code>{prefix}cfg {name} [key] [value]</code><br><br>",
+        commands_title="<b>🛠 Команди</b><br>",
         cmd_not_found="❌ | <b>Не знайдено:</b> Команду або модуль <code>{name}</code> не знайдено.",
+        mod_suggestions="<b>🔍 | Не вдалося знайти за назвою.</b> Можливо, ви мали на увазі це?<br><br>{suggestions}",
         mod_not_found="❌ | <b>Не знайдено:</b> Модуль <code>{name}</code> не знайдено в реєстрі.",
         mod_no_cfg="❌ | <b>Помилка конфігурації:</b> Модуль <code>{name}</code> не підтримує налаштування.",
         cfg_success="✅ | <b>Конфігурацію оновлено:</b> <code>{key}</code> для <b>{mod}</b> встановлено в <code>{val}</code>",
@@ -164,12 +169,13 @@ locales = Locales(
         default_desc="Helper Center",
         modules_title="<b>Modules disponibles (Page {curr}/{total}):</b><br><br>",
         module_item="<details><summary>▫️ <b>{name}</b></summary><i>{desc}</i><br>⬥ {commands}</details>",
-        module_info="<b>📦 | </b> <code>{name}</code><br><b>ℹ️ | Description:</b> <i>{desc}</i><br><br>",
-        config_title="<b>⚙️ | Options de configuration:</b><br>",
-        config_item="    ⬥ <code>{key}</code>: <i>{desc}</i> (Actuel: <code>{val}</code>)<br>",
-        config_usage_hint="<br><i>Modifier: <code>{prefix}cfg {name} [key] [value]</code></i><br>",
-        commands_title="<br><b>🛠 | Commandes:</b><br>",
+        module_info="<b>📦 | {name} {version}</b><br>┗ {desc}<br><br>",
+        config_title="<b>⚙️ Configuration</b><br>",
+        config_item="- <code>{key}</code>: <i>{desc}</i> (actuel: <code>{val}</code>)<br>",
+        config_usage_hint="┗ Modifier: <code>{prefix}cfg {name} [key] [value]</code><br><br>",
+        commands_title="<b>🛠 Commandes</b><br>",
         cmd_not_found="❌ | <b>Introuvable:</b> Commande ou module <code>{name}</code> introuvable.",
+        mod_suggestions="<b>🔍 | Introuvable par nom.</b> Vouliez-vous dire ceci?<br><br>{suggestions}",
         mod_not_found="❌ | <b>Introuvable:</b> Module <code>{name}</code> introuvable dans le registre.",
         mod_no_cfg="❌ | <b>Erreur de config:</b> Le module <code>{name}</code> ne supporte pas la configuration.",
         cfg_success="✅ | <b>Config mise à jour:</b> <code>{key}</code> pour <b>{mod}</b> défini à <code>{val}</code>",
@@ -187,12 +193,13 @@ locales = Locales(
         default_desc="Helper Center",
         modules_title="<b>Verfügbare Module (Seite {curr}/{total}):</b><br><br>",
         module_item="<details><summary>▫️ <b>{name}</b></summary><i>{desc}</i><br>⬥ {commands}</details>",
-        module_info="<b>📦 | </b> <code>{name}</code><br><b>ℹ️ | Beschreibung:</b> <i>{desc}</i><br><br>",
-        config_title="<b>⚙️ | Konfigurationsoptionen:</b><br>",
-        config_item="    ⬥ <code>{key}</code>: <i>{desc}</i> (Aktuell: <code>{val}</code>)<br>",
-        config_usage_hint="<br><i>Ändern: <code>{prefix}cfg {name} [key] [value]</code></i><br>",
-        commands_title="<br><b>🛠 | Befehle:</b><br>",
+        module_info="<b>📦 | {name} {version}</b><br>┗ {desc}<br><br>",
+        config_title="<b>⚙️ Konfiguration</b><br>",
+        config_item="- <code>{key}</code>: <i>{desc}</i> (aktuell: <code>{val}</code>)<br>",
+        config_usage_hint="┗ Ändern: <code>{prefix}cfg {name} [key] [value]</code><br><br>",
+        commands_title="<b>🛠 Befehle</b><br>",
         cmd_not_found="❌ | <b>Nicht gefunden:</b> Befehl oder Modul <code>{name}</code> nicht gefunden.",
+        mod_suggestions="<b>🔍 | Nicht gefunden.</b> Meinten Sie dies?<br><br>{suggestions}",
         mod_not_found="❌ | <b>Nicht gefunden:</b> Modul <code>{name}</code> nicht im Register gefunden.",
         mod_no_cfg="❌ | <b>Konfigurationsfehler:</b> Modul <code>{name}</code> unterstützt keine Konfiguration.",
         cfg_success="✅ | <b>Konfiguration aktualisiert:</b> <code>{key}</code> für <b>{mod}</b> auf <code>{val}</code> gesetzt",
@@ -210,12 +217,13 @@ locales = Locales(
         default_desc="Helper Center",
         modules_title="<b>利用可能なモジュール (ページ {curr}/{total}):</b><br><br>",
         module_item="<details><summary>▫️ <b>{name}</b></summary><i>{desc}</i><br>⬥ {commands}</details>",
-        module_info="<b>📦 | </b> <code>{name}</code><br><b>ℹ️ | 説明:</b> <i>{desc}</i><br><br>",
-        config_title="<b>⚙️ | 設定オプション:</b><br>",
-        config_item="    ⬥ <code>{key}</code>: <i>{desc}</i> (現在: <code>{val}</code>)<br>",
-        config_usage_hint="<br><i>変更: <code>{prefix}cfg {name} [key] [value]</code></i><br>",
-        commands_title="<br><b>🛠 | コマンド:</b><br>",
+        module_info="<b>📦 | {name} {version}</b><br>┗ {desc}<br><br>",
+        config_title="<b>⚙️ 設定</b><br>",
+        config_item="- <code>{key}</code>: <i>{desc}</i> (現在: <code>{val}</code>)<br>",
+        config_usage_hint="┗ 変更: <code>{prefix}cfg {name} [key] [value]</code><br><br>",
+        commands_title="<b>🛠 コマンド</b><br>",
         cmd_not_found="❌ | <b>見つかりません:</b> コマンドまたはモジュール <code>{name}</code> が見つかりません。",
+        mod_suggestions="<b>🔍 | 名前で見つかりませんでした。</b> もしかしてこれですか？<br><br>{suggestions}",
         mod_not_found="❌ | <b>見つかりません:</b> モジュール <code>{name}</code> がレジストリに見つかりません。",
         mod_no_cfg="❌ | <b>設定エラー:</b> モジュール <code>{name}</code> は設定をサポートしていません。",
         cfg_success="✅ | <b>設定を更新しました:</b> <code>{key}</code> を <b>{mod}</b> に <code>{val}</code> として設定",
@@ -239,7 +247,15 @@ class HelperModule(loader.Module):
         return getattr(getattr(mod, "Meta", None), "name", mod.__class__.__name__)
 
     def _module_desc(self, mod) -> str:
-        return getattr(getattr(mod, "Meta", None), "description", self.strings["no_desc"])
+        meta = getattr(mod, "Meta", None)
+        desc = getattr(meta, "description", None) or ""
+        return desc if desc else self.strings["no_desc"]
+
+    def _module_version(self, mod) -> str:
+        v = getattr(getattr(mod, "Meta", None), "version", "")
+        if isinstance(v, list):
+            return "v" + ".".join(str(x) for x in v)
+        return "v" + str(v) if v else ""
 
     @loader.command()
     async def help(self, mx, event: MessageEvent, payload: HelpPayload = HelpPayload()):
@@ -313,6 +329,45 @@ class HelperModule(loader.Module):
                     break
 
         if not target_mod:
+            suggestions = {}
+            for mod in mx.active_modules.values():
+                if not getattr(mod, "enabled", True):
+                    continue
+                mod_name = self._module_name(mod).lower()
+                display = self._module_name(mod)
+
+                if mod_name.startswith(target):
+                    suggestions[display] = max(suggestions.get(display, 0), 0.95)
+                elif target in mod_name:
+                    suggestions[display] = max(suggestions.get(display, 0), 0.85)
+                else:
+                    score = SequenceMatcher(None, target, mod_name).ratio()
+                    if score >= 0.65:
+                        suggestions[display] = max(suggestions.get(display, 0), score)
+
+                for alias in getattr(mod, "aliases", []):
+                    a = alias.lower()
+                    if a.startswith(target):
+                        suggestions[display] = max(suggestions.get(display, 0), 0.95)
+                    elif target in a:
+                        suggestions[display] = max(suggestions.get(display, 0), 0.85)
+                    else:
+                        alias_score = SequenceMatcher(None, target, a).ratio()
+                        if alias_score >= 0.65:
+                            suggestions[display] = max(suggestions.get(display, 0), alias_score)
+
+            if suggestions:
+                ranked = sorted(suggestions.items(), key=lambda x: x[1], reverse=True)
+                items = "<br>".join(
+                    f"⬥ <code>{cutils.escape_html(n)}</code>" for n, _ in ranked[:5]
+                )
+                await utils.answer(
+                    mx,
+                    self.strings["mod_suggestions"].format(suggestions=items),
+                    event=event,
+                )
+                return
+
             await utils.answer(
                 mx,
                 self.strings["cmd_not_found"].format(name=cutils.escape_html(target)),
@@ -323,7 +378,8 @@ class HelperModule(loader.Module):
         prefix = await utils.get_prefix(mx)
         name = self._module_name(target_mod)
         desc = self._module_desc(target_mod)
-        msg = self.strings["module_info"].format(name=name, desc=desc)
+        version = self._module_version(target_mod)
+        msg = self.strings["module_info"].format(name=name, version=version, desc=desc)
 
         if hasattr(target_mod, "config") and hasattr(target_mod.config, "_schema"):
             msg += self.strings["config_title"]

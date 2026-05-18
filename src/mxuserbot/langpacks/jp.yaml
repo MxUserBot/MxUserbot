@@ -11,12 +11,12 @@ callback:
 
 loader:
   help_name: "<b>📦 | {name}</b>"
-  help_name_version: " <i>v{version}</i>"
-  help_desc: "<b>ℹ️ | 説明:</b> <i>{desc}</i><br>"
-  help_config_title: "<b>⚙️ | 設定:</b><br>"
-  help_config_item: "    ⬥ <code>{key}</code>: <i>{desc}</i> (現在: <code>{val}</code>)<br>"
-  help_commands_title: "<b>🛠 | コマンド:</b><br>"
-  help_command_item: " • <code>{prefix}{cmd}</code> — <i>{desc}</i><br>"
+  help_name_version: " <i>v{version}</i><br>"
+  help_desc: "┗ {desc}<br>"
+  help_config_title: "<b>⚙️ 設定</b><br>"
+  help_config_item: "- <code>{key}</code>: <i>{desc}</i> (現在: <code>{val}</code>)<br>"
+  help_commands_title: "<b>🛠 コマンド</b><br>"
+  help_command_item: "• <code>{prefix}{cmd}</code> — <i>{desc}</i><br>"
   core_frozen: "コアモジュールはメモリに固定されており、変更できません！"
   dep_conflict: "<b>⚠️ 依存関係の競合を検出しました！</b><br>モジュール <code>{id}</code> は他のモジュールが既に使用しているパッケージを必要としています:<br>{conflicts}<br><br><b>それでもインストールしますか？</b>"
   dep_confirm_yes: "✅ インストール"

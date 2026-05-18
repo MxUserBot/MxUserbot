@@ -4,7 +4,6 @@
 # You can redistribute it and/or modify it under the terms of the GNU AGPLv3
 # 🔑 https://www.gnu.org/licenses/agpl-3.0.html
 
-import ast
 import sys
 import time
 from enum import IntFlag
@@ -29,7 +28,6 @@ SUDO = SecLevel.SUDO
 EVERYONE = SecLevel.EVERYONE
 ALL = SecLevel.ALL
 DEFAULT_PERMISSIONS = SUDO
-COMM_MARKERS = ("/mxuserbot/community/",)
 
 
 def _sec(func, flags: int):
@@ -78,6 +76,51 @@ class ScopedDatabase:
         return await self._raw_db.set(self._module_name, key, value)
 
 
+class MXBotInterface:
+    """A secure wrapper to be passed to modules.
+    
+    Dependencies are injected via __init__ or set directly
+    on the instance as they become available during startup.
+    """
+
+    def __init__(self, *, fsm=None, current_event=None, strings=STRINGS, version="", log_room=None, _bot=None):
+        self._client = None
+        self._fsm = fsm
+        self._security = None
+        self._active_modules = {}
+        self._current_event = current_event
+        self._bot = _bot
+        self._prefix_val = "."
+        self.strings = strings
+        self.version = version
+
+    @property
+    def client(self):
+        return self._client
+
+    @property
+    def log_room(self):
+        if self._bot:
+            return self._bot.log_room
+        return None
+
+    @property
+    def security(self):
+        return self._security
+
+    @property
+    def _prefixes(self):
+        return self._prefix_val
+
+    @_prefixes.setter
+    def _prefixes(self, value):
+        self._prefix_val = value
+
+    @property
+    def active_modules(self):
+        return self._active_modules
+
+
 class MXUS:
     def __init__(self, bot):
         self.bot = bot
@@ -87,26 +130,7 @@ class MXUS:
         self.sudos = set()
         self.tsec_users =[] 
 
-        self.comm_markers = ("/mxuserbot/community/",)
-        self.comm_marker = self.comm_markers[0]
-        self._in_is_community = False
         self.key = "mxu.rocksdb/.mxu.key"
-        
-        self.forbidden_api =[
-
-        ]
-        self.forbidden_core =[
-            "login", "logout", "logout_all", "create_device_msc4190",
-            "add_dispatcher", "remove_dispatcher"
-        ]
-        self.forbidden_attrs = ["crypto", "crypto_enabled", "_bot", "device_id"]
-        
-        self.all_forbidden = set(self.forbidden_api + self.forbidden_core + self.forbidden_attrs)
-        
-        self.forbidden_imports = {
-            "sys", "ctypes", "importlib",
-            "shutil", "socket", "pty", "builtins",
-        }
 
 
     async def init_security(
@@ -133,121 +157,6 @@ class MXUS:
         self.tsec_users = await self._db.get("core", "tsec_users",[])
         
         logger.success(f"Security active. Owner: {self.owners}")
-
-        self._enable_firewall()
-
-
-    def _is_community_caller(
-        self
-    ) -> bool:
-        if self._in_is_community:
-            return False
-        self._in_is_community = True
-        try:
-            f = sys._getframe(2)
-            fn = f.f_code.co_filename.replace("\\", "/")
-            return any(marker in fn for marker in self.comm_markers)
-        except Exception:
-            return False
-        finally:
-            self._in_is_community = False
-
-
-    def _enable_firewall(
-        self
-    ):
-        fs_blocklist = ["mxu.rocksdb", "/mxuserbot/core/", "/modules/core/"]
-        
-        def _extract_paths(event, args):
-            if event in ("open", "os.open"):
-                return [str(args[0])]
-            if event in ("os.remove",):
-                return [str(args[0])]
-            if event in ("os.rename",):
-                return [str(args[0]), str(args[1])]
-            if event in ("os.chmod", "os.chown", "os.listdir", "os.scandir", "os.mkdir"):
-                return [str(args[0])]
-            return []
-
-        def core_audit_hook(event, args):
-            if event in ("compile", "sys._getframe"):
-                if event == "compile":
-                    source, filename = args
-                    if (
-                        filename
-                        and isinstance(filename, str)
-                        and any(marker in filename.replace("\\", "/") for marker in self.comm_markers)
-                    ):
-                        self._audit_code(source, filename)
-                return
-
-            if not self._is_community_caller():
-                return
-
-            if event == "import":
-                blocked = ["mxuserbot.modules.core", "mxuserbot.core.security"]
-                if any(args[0] == b or args[0].startswith(f"{b}.") for b in blocked):
-                    raise PermissionError(self.strings("security.core_import", name=args[0]))
-
-            if event.startswith("ctypes"):
-                raise PermissionError(self.strings("security.memory_access"))
-
-            if event in ("subprocess.Popen",):
-                raise PermissionError(self.strings("security.subprocess"))
-
-            paths = _extract_paths(event, args)
-            if paths:
-                joined = " ".join(p.replace("\\", "/").lower() for p in paths)
-                if any(r in joined for r in fs_blocklist):
-                    raise PermissionError(self.strings("security.no_access"))
-                if event in ("open", "os.open") and len(args) > 1:
-                    mode = args[1]
-                    import os as _os
-                    write_flags = _os.O_WRONLY | _os.O_RDWR | _os.O_CREAT | _os.O_TRUNC | _os.O_APPEND
-                    if isinstance(mode, int) and (mode & write_flags):
-                        raise PermissionError(self.strings("security.write_access"))
-                    if isinstance(mode, str) and any(m in mode for m in "wax+"):
-                        raise PermissionError(self.strings("security.write_access"))
-        
-        sys.addaudithook(core_audit_hook)
-
-
-    def _audit_code(
-        self,
-        source,
-        filename
-    ):
-        try:
-            tree = ast.parse(source)
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Attribute) and node.attr in self.all_forbidden:
-                    raise PermissionError(self.strings("security.forbidden_attr", attr=node.attr))
-                
-                if isinstance(node, ast.Import):
-                    for alias in node.names:
-                        base_module = alias.name.split('.')[0]
-                        if base_module in self.forbidden_imports:
-                            raise PermissionError(self.strings("security.forbidden_import", name=alias.name))
-                
-                if isinstance(node, ast.ImportFrom) and node.module:
-                    base_module = node.module.split('.')[0]
-                    if base_module in self.forbidden_imports:
-                        raise PermissionError(self.strings("security.forbidden_import", name=node.module))
-
-                if isinstance(node, ast.Call):
-                    if isinstance(node.func, ast.Name) and node.func.id in {"eval", "exec", "__import__"}:
-                        raise PermissionError(self.strings("security.eval_forbidden", name=node.func.id))
-                    if isinstance(node.func, ast.Attribute):
-                        if node.func.attr in {"eval", "exec", "__import__"}:
-                            raise PermissionError(self.strings("security.eval_forbidden", name=node.func.attr))
-                        if node.func.attr == "getattr":
-                            for arg in node.args:
-                                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                                    if arg.value in self.all_forbidden:
-                                        raise PermissionError(self.strings("security.getattr_bypass", name=arg.value))
-
-        except SyntaxError:
-            raise PermissionError(self.strings("security.syntax_error"))
 
 
     def is_owner(
@@ -296,7 +205,7 @@ class MXUS:
             if not room_id or not target:
                 continue
             name = target.split(":")[0]
-            text = self.strings("security.temp_expired", name=name, cmd=cmd_name)
+            text = self.strings.get("security.temp_expired").format(name=name, cmd=cmd_name)
             try:
                 await utils.answer(self.bot, text, room_id=room_id)
             except Exception:
@@ -348,9 +257,6 @@ class MXUS:
             )
     
     def _get_key(self) -> bytes:
-        if self._is_community_caller():
-            raise PermissionError(self.strings("security.no_access"))
-
         import os
         from cryptography.fernet import Fernet
         
@@ -369,8 +275,6 @@ class MXUS:
         return key
 
     def _get_pickle_key(self) -> str:
-        if self._is_community_caller():
-            raise PermissionError(self.strings("security.no_access"))
         return ensure_pickle_key()
 
 

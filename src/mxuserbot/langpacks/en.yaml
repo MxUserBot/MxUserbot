@@ -11,12 +11,12 @@ callback:
 
 loader:
   help_name: "<b>📦 | {name}</b>"
-  help_name_version: " <i>v{version}</i>"
-  help_desc: "<b>ℹ️ | Description:</b> <i>{desc}</i><br>"
-  help_config_title: "<b>⚙️ | Configuration:</b><br>"
-  help_config_item: "    ⬥ <code>{key}</code>: <i>{desc}</i> (Current: <code>{val}</code>)<br>"
-  help_commands_title: "<b>🛠 | Commands:</b><br>"
-  help_command_item: " • <code>{prefix}{cmd}</code> — <i>{desc}</i><br>"
+  help_name_version: " <i>v{version}</i><br>"
+  help_desc: "┗ {desc}<br>"
+  help_config_title: "<b>⚙️ Configuration</b><br>"
+  help_config_item: "- <code>{key}</code>: <i>{desc}</i> (current: <code>{val}</code>)<br>"
+  help_commands_title: "<b>🛠 Commands</b><br>"
+  help_command_item: "• <code>{prefix}{cmd}</code> — <i>{desc}</i><br>"
   core_frozen: "Core modules are frozen in memory and cannot be modified!"
   dep_conflict: "<b>⚠️ Dependency conflict detected!</b><br>Module <code>{id}</code> requires packages already used by other modules:<br>{conflicts}<br><br><b>Install anyway?</b>"
   dep_confirm_yes: "✅ Install"
@@ -35,6 +35,8 @@ loader:
   no_target: "No target or code provided for installation!"
   module_not_found: "Module '{name}' not found!"
   not_file: "Is not file!"
+  update_header: "🔄 | Module updates available:"
+  update_line: "⬥ <code>{name}</code>: {current} → <b>{available}</b>"
 
 module:
   no_description: "No description"

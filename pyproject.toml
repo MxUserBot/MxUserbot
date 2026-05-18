@@ -10,7 +10,7 @@ dependencies = [
     "fastapi[standard]>=0.135.3",
     "loguru>=0.7.3",
     "mautrix[encryption]>=0.21.0",
-    "mxc",
+    "mxc>=0.1.6",
     "pillow>=12.2.0",
     "psutil>=7.2.2",
     "pydantic>=2.12.5",

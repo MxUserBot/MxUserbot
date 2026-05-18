@@ -12,9 +12,9 @@ from typing import Any, Callable, Optional
 
 from loguru import logger
 
-from mxc import utils
+from ..core import utils
 
-from .langs import STRINGS
+from .langs import STRINGS, Locales, Translator, YamlStrings, current as lang_current
 
 
 class ModuleConfig:
@@ -74,7 +74,7 @@ class ModuleConfig:
         return None
 
     def get_description(self, key: str) -> str:
-        return self._schema[key].description if key in self._schema else STRINGS("module.no_description")
+        return self._schema[key].description if key in self._schema else STRINGS.get("module.no_description")
 
 
 class ConfigValue:
@@ -134,7 +134,18 @@ class Module(ABC):
         self._get = db.get
         self._set = db.set
 
-        self.strings = getattr(self.__class__, "strings", {}).copy()
+        raw = getattr(self.__class__, "strings", {})
+        if isinstance(raw, dict):
+            self.strings = raw.copy()
+        elif isinstance(raw, Locales):
+            self.strings = Translator(raw, lang_current())
+        elif isinstance(raw, Translator):
+            self.strings = raw.copy()
+            self.strings.set_lang(lang_current())
+        elif isinstance(raw, YamlStrings):
+            self.strings = raw.copy()
+        else:
+            self.strings = {}
         self.friendly_name = self.strings.get("name") or self.config.get("name") or self.__class__.__name__
 
         schema = getattr(self.__class__, "config", {})
@@ -150,7 +161,7 @@ class Module(ABC):
             self._commands[cmd_name] = getattr(self, func.__name__)
 
     def _help(self):
-        return self.strings.get("description", STRINGS("module.no_description_available"))
+        return self.strings.get("description", STRINGS.get("module.no_description_available"))
 
     @property
     def commands(self):

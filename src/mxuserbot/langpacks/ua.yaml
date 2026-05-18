@@ -11,12 +11,12 @@ callback:
 
 loader:
   help_name: "<b>📦 | {name}</b>"
-  help_name_version: " <i>v{version}</i>"
-  help_desc: "<b>ℹ️ | Опис:</b> <i>{desc}</i><br>"
-  help_config_title: "<b>⚙️ | Конфігурація:</b><br>"
-  help_config_item: "    ⬥ <code>{key}</code>: <i>{desc}</i> (Поточне: <code>{val}</code>)<br>"
-  help_commands_title: "<b>🛠 | Команди:</b><br>"
-  help_command_item: " • <code>{prefix}{cmd}</code> — <i>{desc}</i><br>"
+  help_name_version: " <i>v{version}</i><br>"
+  help_desc: "┗ {desc}<br>"
+  help_config_title: "<b>⚙️ Конфігурація</b><br>"
+  help_config_item: "- <code>{key}</code>: <i>{desc}</i> (поточне: <code>{val}</code>)<br>"
+  help_commands_title: "<b>🛠 Команди</b><br>"
+  help_command_item: "• <code>{prefix}{cmd}</code> — <i>{desc}</i><br>"
   core_frozen: "Модулі ядра заморожені в пам'яті та не можуть бути змінені!"
   dep_conflict: "<b>⚠️ Виявлено конфлікт залежностей!</b><br>Модуль <code>{id}</code> потребує пакети, які вже використовуються іншими модулями:<br>{conflicts}<br><br><b>Все одно встановити?</b>"
   dep_confirm_yes: "✅ Встановити"

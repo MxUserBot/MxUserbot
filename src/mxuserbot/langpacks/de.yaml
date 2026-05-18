@@ -11,12 +11,12 @@ callback:
 
 loader:
   help_name: "<b>📦 | {name}</b>"
-  help_name_version: " <i>v{version}</i>"
-  help_desc: "<b>ℹ️ | Beschreibung:</b> <i>{desc}</i><br>"
-  help_config_title: "<b>⚙️ | Konfiguration:</b><br>"
-  help_config_item: "    ⬥ <code>{key}</code>: <i>{desc}</i> (Aktuell: <code>{val}</code>)<br>"
-  help_commands_title: "<b>🛠 | Befehle:</b><br>"
-  help_command_item: " • <code>{prefix}{cmd}</code> — <i>{desc}</i><br>"
+  help_name_version: " <i>v{version}</i><br>"
+  help_desc: "┗ {desc}<br>"
+  help_config_title: "<b>⚙️ Konfiguration</b><br>"
+  help_config_item: "- <code>{key}</code>: <i>{desc}</i> (aktuell: <code>{val}</code>)<br>"
+  help_commands_title: "<b>🛠 Befehle</b><br>"
+  help_command_item: "• <code>{prefix}{cmd}</code> — <i>{desc}</i><br>"
   core_frozen: "Kernmodule sind im Speicher eingefroren und können nicht geändert werden!"
   dep_conflict: "<b>⚠️ Abhängigkeitskonflikt erkannt!</b><br>Modul <code>{id}</code> benötigt Pakete, die bereits von anderen Modulen verwendet werden:<br>{conflicts}<br><br><b>Trotzdem installieren?</b>"
   dep_confirm_yes: "✅ Installieren"
