@@ -155,8 +155,8 @@ class Loader:
             await utils.answer(mx, "".join(lines), event=event)
         try:
             await _inner()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"show_module_help error for {filename}: {e}")
 
     async def register_module(self, path: Path, bot, is_core: bool = False):
         subfolder = "core" if is_core else "community"
@@ -373,7 +373,8 @@ class Loader:
         if getattr(instance, "_is_core", False):
             raise RuntimeError(f"core module '{name}' cannot be unloaded")
         for task in getattr(instance, "_cron_tasks", []):
-            task.cancel()
+            if isinstance(task, asyncio.Task):
+                task.cancel()
         if hasattr(instance, "commands"):
             for cmd_name, func in instance.commands.items():
                 self.command_registry.pop(cmd_name, None)

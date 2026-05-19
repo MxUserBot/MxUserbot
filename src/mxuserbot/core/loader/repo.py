@@ -117,7 +117,10 @@ class RepoManager:
                 return data
         try:
             cache_buster = f"?_={int(now)}"
-            data = await utils.request(f"{repo_url}/index.json{cache_buster}", return_type="json")
+            data = await asyncio.wait_for(
+                utils.request(f"{repo_url}/index.json{cache_buster}", return_type="json"),
+                timeout=15,
+            )
             if not isinstance(data, dict):
                 return {}
             for mod_id, meta in data.items():
@@ -225,7 +228,7 @@ class RepoManager:
             proc = await asyncio.create_subprocess_exec(
                 *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
-            stdout, stderr = await proc.communicate()
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
             if proc.returncode != 0:
                 err_msg = stderr.decode('utf-8').strip()
                 logger.error(f"UV ERROR: {err_msg}")
@@ -382,7 +385,10 @@ class RepoManager:
         except zipfile.BadZipFile:
             raise ValueError(self.strings.get("loader.invalid_zip"))
         finally:
-            shutil.rmtree(str(temp_dir), ignore_errors=True)
+            try:
+                shutil.rmtree(str(temp_dir))
+            except Exception as e:
+                logger.warning(f"Failed to clean up temp dir {temp_dir}: {e}")
 
     async def install(self, target: Optional[str] = None, code: Optional[str] = None, filename: Optional[str] = None, event=None) -> bool:
         if target:

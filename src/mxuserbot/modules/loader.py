@@ -15,6 +15,7 @@ class Meta:
     tags = ["system"]
 
 
+from loguru import logger
 import asyncio
 import logging
 from pathlib import Path
@@ -314,7 +315,7 @@ class LoaderModule(loader.Module):
 
     async def _matrix_start(self, mx):
         self.repo = loader.RepoManager(mx, self._db, self.config.get("repo_url"))
-        self._unsafe_warn_ok = await self._get("LoaderModule", "unsafe_warn_ok", False)
+        self._unsafe_warn_ok = await self._get("unsafe_warn_ok", False)
 
     async def _security_gate(self, mx, event, payload: MdlPayload, source_verified: bool, source_url: str = "", is_file: bool = False, on_confirm=None):
         is_direct = payload.target.startswith(("http", "import ", "from ")) or is_file
@@ -327,7 +328,7 @@ class LoaderModule(loader.Module):
             if not ok:
                 return False
             self._unsafe_warn_ok = True
-            await self._set("LoaderModule", "unsafe_warn_ok", True)
+            await self._set("unsafe_warn_ok", True)
 
         await self._confirm_unsafe_install(mx, event, source_url or payload.target, on_confirm=on_confirm)
         return False
@@ -549,15 +550,6 @@ class LoaderModule(loader.Module):
         if not await self._security_gate(mx, event, payload, getattr(source, "is_verified", False), source_url=url, on_confirm=_install):
             return
 
-        await utils.answer(mx, self.strings["downloading"], edit_id=status_id)
-        if await self.repo.install(target=payload.target, event=event):
-            filename = url.split("/")[-1]
-            if not filename.endswith((".py", ".zip")): filename += ".py"
-            await utils.answer(mx, self.strings["done"].format(name=filename), edit_id=status_id)
-            await self.loader.show_module_help(mx, event, filename)
-        else:
-            await utils.answer(mx, self.strings["error"].format(err="Install failed!"), edit_id=status_id)
-
 
     @loader.command(security=loader.OWNER)
     async def addrepo(self, mx, event: MessageEvent, payload: RepoPayload):
@@ -577,7 +569,7 @@ class LoaderModule(loader.Module):
                 repos = await self.repo.get_repos()
                 if payload.url not in repos:
                     repos.append(payload.url)
-                    await self._set("LoaderModule", "community_repos", repos)
+                    await self._set("community_repos", repos)
                 result[0] = True
                 await ctx.edit(self.strings["repo_added"].format(url=payload.url))
             else:
@@ -602,7 +594,7 @@ class LoaderModule(loader.Module):
         try:
             await asyncio.wait_for(confirmed.wait(), timeout=120)
         except asyncio.TimeoutError:
-            pass
+            await utils.answer(mx, self.strings["confirm_cancelled"], edit_id=event.event_id)
 
 
     @loader.command(security=loader.OWNER)
@@ -614,7 +606,7 @@ class LoaderModule(loader.Module):
         repos = await self.repo.get_repos()
         if payload.url in repos:
             repos.remove(payload.url)
-            await self._set("LoaderModule", "community_repos", repos)
+            await self._set("community_repos", repos)
             await utils.answer(mx, self.strings["repo_removed"])
 
 
@@ -622,6 +614,16 @@ class LoaderModule(loader.Module):
     async def reload(self, mx, event: MessageEvent):
         """Reload everything modules!"""
         status_id = await utils.answer(mx, self.strings["reloading"])
+
+        # unload all community modules first to prevent handler duplication
+        for mod_name in list(self.loader.active_modules.keys()):
+            instance = self.loader.active_modules.get(mod_name)
+            if instance and not getattr(instance, "_is_core", False):
+                try:
+                    await self.loader.unload_module(mod_name, mx)
+                except Exception as e:
+                    logger.warning(f"Failed to unload {mod_name} during reload: {e}")
+
         errors = await self.loader.register_all(mx)
         msg = self.strings["reloaded"].format(count=len(mx.active_modules))
         if errors:
@@ -655,10 +657,21 @@ class LoaderModule(loader.Module):
             success = []
             failed = []
             for upd in updates:
+                mod_id = upd["module_id"]
+                old_file = Path(self.loader.community_path) / f"{mod_id}.py"
+                old_code = old_file.read_text(encoding="utf-8") if old_file.exists() else None
                 try:
-                    await self.repo.install(target=upd["module_id"], event=event)
+                    await self.repo.install(target=mod_id, event=event)
                     success.append(upd["name"])
                 except Exception as e:
+                    # rollback: restore old code if install failed
+                    if old_code is not None:
+                        try:
+                            old_file.parent.mkdir(parents=True, exist_ok=True)
+                            old_file.write_text(old_code, encoding="utf-8")
+                            await self.loader.register_module(old_file, mx, is_core=False)
+                        except Exception as rb_e:
+                            logger.error(f"Rollback failed for {mod_id}: {rb_e}")
                     failed.append(f"{upd['name']}: {e}")
             msg = f"♻️ | <b>Updated {len(success)} module(s).</b>"
             if failed:

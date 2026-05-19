@@ -93,6 +93,9 @@ class MXUserBot(Program):
         
         self.start_time: Optional[int] = None
         self._prefixes: str = "."
+        self._background_tasks: set[asyncio.Task] = set()
+        self._web_task: Optional[asyncio.Task] = None
+        self._cb: Optional[CallBack] = None
 
 
     async def _get_core_conf(
@@ -208,7 +211,7 @@ class MXUserBot(Program):
 
     async def run_web(self):
         from .web.api.main import run_web_server
-        await run_web_server(self, 8000)
+        self._web_task = asyncio.create_task(run_web_server(self, 8000))
 
 
     async def setup_userbot(self) -> None:
@@ -222,7 +225,11 @@ class MXUserBot(Program):
             token = await self._get_core_conf("access_token")
             if not token:
                 self.log.warning("🔑 | auth not found. Please auth.")
-                await self.auth_completed.wait()
+                try:
+                    await asyncio.wait_for(self.auth_completed.wait(), timeout=300)
+                except asyncio.TimeoutError:
+                    self.log.error("Auth timeout — no authentication within 300s")
+                    raise
                 token = await self._get_core_conf("access_token")
 
             base_url = await self._get_core_conf("base_url")
@@ -274,8 +281,11 @@ class MXUserBot(Program):
                 try:
                     await self.client.whoami()
                     break
-                except (MatrixConnectionError, OSError):
-                    self.log.error("🌐 | Network unavailable, retrace in 5 seconds...")
+                except (MatrixConnectionError, OSError, asyncio.TimeoutError) as exc:
+                    self.log.error(f"🌐 | Network unavailable ({exc}), retry in 5 seconds...")
+                    await asyncio.sleep(5)
+                except Exception as exc:
+                    self.log.error(f"🌐 | whoami failed ({exc}), retry in 5 seconds...")
                     await asyncio.sleep(5)
 
             await self.security.init_security()
@@ -294,8 +304,7 @@ class MXUserBot(Program):
             try:
                 await asyncio.wait_for(self.all_modules.register_all(self), timeout=30)
             except asyncio.TimeoutError:
-                self.log.error("Module loading timed out")
-                raise
+                self.log.error("Module loading timed out, continuing with loaded modules")
             self.active_modules = self.all_modules.active_modules
             self.interface._active_modules = self.active_modules
 
@@ -309,7 +318,8 @@ class MXUserBot(Program):
                 self._prefixes = "." 
             self.interface._prefixes = self._prefixes
 
-            cb = CallBack(self)
+            self._cb = CallBack(self)
+            cb = self._cb
             self.client.add_event_handler(EventType.ROOM_MEMBER, self.security.gate(cb.invite_cb))
             self.client.add_event_handler(EventType.ROOM_MEMBER, cb.memberevent_cb)
             self.client.add_event_handler(EventType.REACTION, cb._dispatch_event)
@@ -353,7 +363,9 @@ class MXUserBot(Program):
                 for instance in list(self.active_modules.values()):
                     for handler in getattr(instance, "_start_handlers", []):
                         passed = self if instance._is_core else self.interface
-                        asyncio.create_task(handler(passed))
+                        task = asyncio.create_task(handler(passed))
+                        self._background_tasks.add(task)
+                        task.add_done_callback(self._background_tasks.discard)
             except asyncio.TimeoutError:
                 self.log.error("Server timeout")
 
@@ -362,6 +374,30 @@ class MXUserBot(Program):
         
     async def stop(self) -> None:
         self.log.info("Shutting down...")
+
+        # cancel callback tasks first
+        if self._cb is not None:
+            await self._cb.cancel_all_tasks()
+
+        # cancel background tasks
+        for task in list(self._background_tasks):
+            task.cancel()
+        if self._background_tasks:
+            await asyncio.wait(self._background_tasks, timeout=5)
+
+        # cancel loader background tasks
+        if self.all_modules:
+            if self.all_modules._update_check_task and not self.all_modules._update_check_task.done():
+                self.all_modules._update_check_task.cancel()
+            for task in list(self.all_modules._background_tasks):
+                task.cancel()
+
+        # wait for web server to finish
+        if self._web_task is not None and not self._web_task.done():
+            try:
+                await asyncio.wait_for(self._web_task, timeout=10)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                self._web_task.cancel()
 
         if self.client:
             self.client.stop()
@@ -382,9 +418,9 @@ class MXUserBot(Program):
         if hasattr(self, "_db") and self._db is not None:
             try:
                 await self._db.flush()
-                self._db.close()
+                await self._db.close()
             except Exception as e:
-                raise
+                logger.error(f"DB close error: {e}")
 
         await super().stop()
 

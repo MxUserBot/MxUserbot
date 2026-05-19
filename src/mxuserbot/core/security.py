@@ -4,6 +4,7 @@
 # You can redistribute it and/or modify it under the terms of the GNU AGPLv3
 # 🔑 https://www.gnu.org/licenses/agpl-3.0.html
 
+import asyncio
 import sys
 import time
 from enum import IntFlag
@@ -128,7 +129,8 @@ class MXUS:
         self._db = bot._db
         self.owners = set()
         self.sudos = set()
-        self.tsec_users =[] 
+        self.tsec_users =[]
+        self._tsec_lock = asyncio.Lock()
 
         self.key = "mxu.rocksdb/.mxu.key"
 
@@ -140,11 +142,11 @@ class MXUS:
         try:
             resp = await self.bot.client.whoami()
             self.owners.add(resp.user_id)
-        except MatrixConnectionError as e:
-            raise e
+        except MatrixConnectionError:
+            raise
         except Exception as e:
             logger.exception(e)
-            sys.exit(1)
+            raise
 
         db_owners = await self._db.get("core", "owners",[])
         if isinstance(db_owners, list):
@@ -173,11 +175,12 @@ class MXUS:
         @wraps(func)
         async def wrapper(event, *args, **kwargs):
             sender = getattr(event, "sender", None)
-            if not sender or sender in self.owners: return await func(event, *args, **kwargs)
-            cfg = getattr(func, "security", DEFAULT_PERMISSIONS)
-            if cfg & EVERYONE or (cfg & SUDO and sender in self.sudos) or self.check_tsec(sender, func.__name__):
+            if not sender or sender in self.owners:
                 return await func(event, *args, **kwargs)
-            expired = getattr(self, '_just_expired', [])
+            cfg = getattr(func, "security", DEFAULT_PERMISSIONS)
+            has_access, expired = self.check_tsec(sender, func.__name__)
+            if cfg & EVERYONE or (cfg & SUDO and sender in self.sudos) or has_access:
+                return await func(event, *args, **kwargs)
             user_expired = [r for r in expired if r.get("target") == sender]
             if user_expired:
                 await self._notify_tsec_expired(user_expired)
@@ -192,9 +195,9 @@ class MXUS:
     ):
         cur = time.time()
         expired = [r for r in self.tsec_users if r.get("expires") and r["expires"] <= cur]
-        self._just_expired = expired
         self.tsec_users = [r for r in self.tsec_users if not r.get("expires") or r["expires"] > cur]
-        return any(r["target"] == sid and r["command"] == cmd for r in self.tsec_users)
+        result = any(r["target"] == sid and r["command"] == cmd for r in self.tsec_users)
+        return result, expired
 
 
     async def _notify_tsec_expired(self, entries: list) -> None:

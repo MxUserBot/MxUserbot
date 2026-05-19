@@ -28,12 +28,26 @@ from mxc.fsm import FSMContext
 from .langs import STRINGS
 
 
+def _tracked_task(tasks_set: set[asyncio.Task], coro):
+    task = asyncio.create_task(coro)
+    tasks_set.add(task)
+    task.add_done_callback(tasks_set.discard)
+    return task
+
+
 class CallBack(BaseCallBack):
     def __init__(self, mx: 'MXUserBot'):
         super().__init__(mx)
         self.mx = mx
         self.strings = STRINGS
         self._encrypted_warned: set[str] = set()
+        self._tasks: set[asyncio.Task] = set()
+
+    async def cancel_all_tasks(self):
+        for task in list(self._tasks):
+            task.cancel()
+        if self._tasks:
+            await asyncio.wait(self._tasks, timeout=5)
 
     async def get_perm_module(self, mod):
         return self.mx if getattr(mod, "_is_core", False) else self.mx.interface
@@ -107,7 +121,8 @@ class CallBack(BaseCallBack):
                         if callable(func) and getattr(func, "is_state", False):
                             if getattr(func, "target_state", None) == current_state:
                                 ctx = FSMContext(self.mx.fsm, evt)
-                                asyncio.create_task(
+                                _tracked_task(
+                                    self._tasks,
                                     self._safe_run(
                                         mod,
                                         func,
@@ -150,7 +165,7 @@ class CallBack(BaseCallBack):
                     )
                     return
 
-            asyncio.create_task(self._execute_command(mod, func, wrapped, cmd_name, args_str, prefix))
+            _tracked_task(self._tasks, self._execute_command(mod, func, wrapped, cmd_name, args_str, prefix))
             return
 
         for mod in self.mx.active_modules.values():
@@ -161,7 +176,8 @@ class CallBack(BaseCallBack):
                 match = w_func.regex.search(body)
                 if match:
                     if await self.mx.security.check_access(evt.sender, w_func, w_func.__name__):
-                        asyncio.create_task(
+                        _tracked_task(
+                            self._tasks,
                             self._safe_run(
                                 mod,
                                 w_func,
@@ -191,7 +207,7 @@ class CallBack(BaseCallBack):
 
         if evt.content.membership == Membership.LEAVE and self.mx.log_room and evt.room_id == self.mx.log_room:
             if evt.state_key == self.mx.client.mxid or evt.state_key in getattr(self.mx.security, "owners", set()):
-                asyncio.create_task(self.mx._recreate_log_room())
+                _tracked_task(self._tasks, self.mx._recreate_log_room())
                 return
 
         await self._dispatch_event(evt)

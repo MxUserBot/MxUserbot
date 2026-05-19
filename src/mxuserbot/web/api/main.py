@@ -130,8 +130,8 @@ async def run_web_server(mx, port: int):
     server.install_signal_handlers = lambda: None
     mx._web_server = server
     
-    asyncio.create_task(server.serve())
     mx.log.info(f"🌐 | API local URL: http://{bind_host}:{port}")
+    await server.serve()
     mx.log.info(f"🚀 | API Public URL: {public_url}")
 
 

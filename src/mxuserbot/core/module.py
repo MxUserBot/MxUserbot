@@ -46,9 +46,11 @@ class ModuleConfig:
             if cfg.validator and not cfg.validator(converted):
                 return False
             self._cache[key] = converted
-            asyncio.create_task(self._setter(key, converted))
+            task = asyncio.create_task(self._setter(key, converted))
+            task.add_done_callback(lambda t: logger.error(f"Config write failed for {key}: {t.exception()}") if t.exception() else None)
             return True
-        except Exception:
+        except Exception as e:
+            logger.error(f"Config set error for {key}: {e}")
             return False
 
     async def set_async(self, key: str, raw_value: Any) -> bool:
@@ -62,7 +64,8 @@ class ModuleConfig:
             self._cache[key] = converted
             await self._setter(key, converted)
             return True
-        except Exception:
+        except Exception as e:
+            logger.error(f"Config set_async error for {key}: {e}")
             return False
 
     def get_missing_required(self) -> typing.Optional[str]:
