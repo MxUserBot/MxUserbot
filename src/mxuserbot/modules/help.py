@@ -11,7 +11,7 @@
 class Meta:
     name = "HelperModule"
     description = "helper Centre"
-    version = "2.2.0"
+    version = "2.3.0"
     dependencies = ["patchlib"]
     tags = ["helper"]
 
@@ -243,6 +243,13 @@ locales = Locales(
 class HelperModule(loader.Module):
     strings = locales
 
+    config = {
+        "banner_url": loader.ConfigValue(
+            default="mxc://matrix.org/YiqPIkdkkiJqMqizxJQTBqVx",
+            description="Banner image URL for .info command",
+        ),
+    }
+
     def _module_name(self, mod) -> str:
         return getattr(getattr(mod, "Meta", None), "name", mod.__class__.__name__)
 
@@ -403,17 +410,14 @@ class HelperModule(loader.Module):
     @loader.command()
     async def info(self, mx, event: MessageEvent):
         """System information card"""
-        banner_url = await mx._get_core_conf("banner_url") or "mxc://matrix.org/YiqPIkdkkiJqMqizxJQTBqVx"
         await utils.answer(
             mx,
             room_id=event.room_id,
             media=Image(
-                url=banner_url,
+                url=self.config["banner_url"],
                 caption=self.strings["info_caption"].format(version=mx.version),
                 filename="info.png",
                 mimetype="image/png",
-                w=600,
-                h=335,
             ),
         )
 

@@ -1,0 +1,40 @@
+# Byte-compiled
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Environment variables
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project: session & data files
+*.session
+*.session-journal
+*.session-backup
+*.txt
+mxu.rocksdb/
+
+# Docker
+docker-compose.override.yml
+
+# Logs
+*.log
+
+# uv
+uv.lock

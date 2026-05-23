@@ -152,11 +152,14 @@ class Module(ABC):
         self.friendly_name = self.strings.get("name") or self.config.get("name") or self.__class__.__name__
 
         schema = getattr(self.__class__, "config", {})
-        self.config = ModuleConfig(
-            self._get,
-            self._set,
-            schema
-        )
+        if is_core:
+            async def _cfg_get(key: str, default=None):
+                return await db.get(name, key, default)
+            async def _cfg_set(key: str, value):
+                return await db.set(name, key, value)
+            self.config = ModuleConfig(_cfg_get, _cfg_set, schema)
+        else:
+            self.config = ModuleConfig(self._get, self._set, schema)
         await self.config._load_from_db()
 
         self._commands = {}
